@@ -34,8 +34,9 @@ mkdir build
 cd build
 cmake ..
 make -j4
-./run /PathToKITTI/sequences/00/ ../calibration/kitti00.yaml
+./run ./home/selbizo/CV/dataset/sequences/00/ ../calibration/kitti00.yaml
 ```
+# ./run /PathToKITTI/sequences/00/ ../calibration/kitti00.yaml
 
 ### GPU CUDA acceleration
 Thanks to [temburuyk](https://github.com/ZhenghaoFei/visual_odom/commits?author=temburuyk), the most time consumtion function `circularMatching()` can be accelerated using CUDA and greately improve the performance. 60~80 FPS on a decent NVIDIA Card. 

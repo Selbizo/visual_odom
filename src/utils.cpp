@@ -19,9 +19,9 @@ void drawFeaturePoints(cv::Mat image, std::vector<cv::Point2f>& points)
 void display(int frame_id, cv::Mat& trajectory, cv::Mat& pose, std::vector<Matrix>& pose_matrix_gt, float fps, bool show_gt)
 {
     // draw estimated trajectory 
-    int x = int(pose.at<double>(0)) + 300;
-    int y = int(pose.at<double>(2)) + 100;
-    circle(trajectory, cv::Point(x, y) ,1, CV_RGB(255,0,0), 2);
+    int x = trajectory.cols/2 + int(pose.at<double>(0));
+    int y = trajectory.rows/2 - int(pose.at<double>(2));
+    circle(trajectory, cv::Point(x, y) ,1, CV_RGB(255,0,180), 2);
 
     if (show_gt)
     {
@@ -31,8 +31,8 @@ void display(int frame_id, cv::Mat& trajectory, cv::Mat& pose, std::vector<Matri
       pose_gt.at<double>(0) = pose_matrix_gt[frame_id].val[0][3];
       pose_gt.at<double>(1) = pose_matrix_gt[frame_id].val[0][7];
       pose_gt.at<double>(2) = pose_matrix_gt[frame_id].val[0][11];
-      x = int(pose_gt.at<double>(0)) + 300;
-      y = int(pose_gt.at<double>(2)) + 100;
+    int x = trajectory.cols/2 + int(pose.at<double>(0));
+    int y = trajectory.rows/2 - int(pose.at<double>(2));
       circle(trajectory, cv::Point(x, y) ,1, CV_RGB(255,255,0), 2);
     }
     // print info
@@ -41,9 +41,8 @@ void display(int frame_id, cv::Mat& trajectory, cv::Mat& pose, std::vector<Matri
     // sprintf(text, "FPS: %02f", fps);
     // putText(traj, text, textOrg, fontFace, fontScale, Scalar::all(255), thickness, 8);
 
-    cv::imshow( "Trajectory", trajectory );
-
-
+    cv::imshow( "Trajectory my", trajectory);
+    trajectory = trajectory * 0.99;
     cv::waitKey(1);
 }
 

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 set (CMAKE_CXX_STANDARD 11)
 project(VisualOdometry)
 
-option(USE_CUDA "Using CUDA to accelerate" OFF)
+option(USE_CUDA "Using CUDA to accelerate" ON)
 
 if(USE_CUDA)
     add_definitions(-DUSE_CUDA)

@@ -88,7 +88,7 @@ int main(int argc, char **argv)
     cv::Mat frame_pose32 = cv::Mat::eye(4, 4, CV_32F);
 
     std::cout << "frame_pose " << frame_pose << std::endl;
-    cv::Mat trajectory = cv::Mat::zeros(600, 1200, CV_8UC3);
+    cv::Mat trajectory = cv::Mat::zeros(800, 1200, CV_8UC3);
     FeatureSet currentVOFeatures;
     cv::Mat points4D, points3D;
     int init_frame_id = 0;
@@ -120,7 +120,7 @@ int main(int argc, char **argv)
     std::vector<FeaturePoint> oldFeaturePointsLeft;
     std::vector<FeaturePoint> currentFeaturePointsLeft;
 
-    for (int frame_id = init_frame_id+1; frame_id < 9000; frame_id++)
+    for (int frame_id = init_frame_id+1; frame_id < 4800; frame_id++)
     {
 
         std::cout << std::endl << "frame id " << frame_id << std::endl;
@@ -220,7 +220,6 @@ int main(int argc, char **argv)
 
         cv::Mat xyz = frame_pose.col(3).clone();
         display(frame_id, trajectory, xyz, pose_matrix_gt, fps, display_ground_truth);
-
     }
 
     return 0;

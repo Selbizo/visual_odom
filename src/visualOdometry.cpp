@@ -219,6 +219,6 @@ void displayTracking(cv::Mat& imageLeft_t1,
       {
           cv::line(vis, pointsLeft_t0[i], pointsLeft_t1[i], CV_RGB(0,255,0));
       }
-
+    //   cv::waitKey(200);
       cv::imshow("vis ", vis );  
 }
