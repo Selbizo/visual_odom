@@ -51,8 +51,8 @@ void featureDetectionGoodFeaturesToTrack(cv::Mat image, std::vector<cv::Point2f>
 //uses GoodFeaturesToTrack for feature dection, modify parameters as necessary
 
   int maxCorners = 5000;
-  double qualityLevel = 0.01;
-  double minDistance = 5.;
+  double qualityLevel = 0.001;
+  double minDistance = 3.;
   int blockSize = 3;
   bool useHarrisDetector = false;
   double k = 0.04;

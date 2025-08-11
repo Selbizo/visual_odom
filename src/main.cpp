@@ -36,6 +36,7 @@ int main(int argc, char **argv)
     // -----------------------------------------
     bool display_ground_truth = false;
     bool use_intel_rgbd = false;
+    bool use_camera = false;
     std::vector<Matrix> pose_matrix_gt;
     if(argc == 4)
     {   display_ground_truth = true;
@@ -56,6 +57,7 @@ int main(int argc, char **argv)
     cout << "Filepath: " << filepath << endl;
 
     if(filepath == "rgbd") use_intel_rgbd = true;
+    if(filepath == "camera") use_camera = true;
 
     // Camera calibration
     string strSettingPath = string(argv[2]);
@@ -98,12 +100,29 @@ int main(int argc, char **argv)
     // ------------------------
     cv::Mat imageRight_t0,  imageLeft_t0;
     CameraBase *pCamera = NULL;
+    //cv::VideoCapture captureLeft(0);
+    cv::VideoCapture captureLeft("http://192.168.8.106:4747/video?640x480");
+    
     if(use_intel_rgbd)
     {   
         pCamera = new Intel_V4L2;
         for (int throw_frames = 10 ; throw_frames >=0 ; throw_frames--)
             pCamera->getLRFrames(imageLeft_t0,imageRight_t0);
     }
+    else if (use_camera &&! use_intel_rgbd)
+    {
+        cv::Mat imageLeft_t0_color;
+        cv::Mat imageRight_t0_color;  
+        captureLeft >> imageLeft_t0_color;
+        cvtColor(imageLeft_t0_color, imageLeft_t0, cv::COLOR_BGR2GRAY);
+
+        imageLeft_t0_color.copyTo(imageRight_t0_color);
+        imageLeft_t0.copyTo(imageRight_t0);
+        //cv::VideoCapture captureRight(0);
+        //captureRight >> imageRight_t0_color;
+        //cvtColor(imageRight_t0_color, imageRight_t0, cv::COLOR_BGR2GRAY);
+    }
+
     else
     {
         cv::Mat imageLeft_t0_color;
@@ -120,7 +139,8 @@ int main(int argc, char **argv)
     std::vector<FeaturePoint> oldFeaturePointsLeft;
     std::vector<FeaturePoint> currentFeaturePointsLeft;
 
-    for (int frame_id = init_frame_id+1; frame_id < 4800; frame_id++)
+    for (int frame_id = init_frame_id+1; frame_id < 480000000; frame_id++)
+    //for(;;)
     {
 
         std::cout << std::endl << "frame id " << frame_id << std::endl;
@@ -131,6 +151,19 @@ int main(int argc, char **argv)
         if(use_intel_rgbd)
         {
             pCamera->getLRFrames(imageLeft_t1,imageRight_t1);
+        }
+            else if (use_camera &&! use_intel_rgbd)
+        {
+            cv::Mat imageLeft_t1_color;
+            cv::Mat imageRight_t1_color;  
+            captureLeft >> imageLeft_t1_color;
+            cvtColor(imageLeft_t1_color, imageLeft_t1, cv::COLOR_BGR2GRAY);
+
+            imageLeft_t1_color.copyTo(imageRight_t1_color);
+            imageLeft_t1.copyTo(imageRight_t1);
+            //cv::VideoCapture captureRight(0);
+            //captureRight >> imageRight_t0_color;
+            //cvtColor(imageRight_t0_color, imageRight_t0, cv::COLOR_BGR2GRAY);
         }
         else
         {
