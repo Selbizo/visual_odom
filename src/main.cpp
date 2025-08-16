@@ -1,8 +1,8 @@
-#include "opencv2/video/tracking.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/features2d/features2d.hpp"
 #include "opencv2/calib3d/calib3d.hpp"
+#include "opencv2/video/tracking.hpp"
 
 #include <iostream>
 #include <ctype.h>
@@ -25,11 +25,12 @@
 
 using namespace std;
 
-int main(int argc, char **argv)
+// int main(int argc, char **argv)
+int main()
 {
 
     #if USE_CUDA
-        printf("CUDA Enabled\n");
+        printf("CUDA is Enabled\n");
     #endif
     // -----------------------------------------
     // Load images and calibration parameters
@@ -38,29 +39,34 @@ int main(int argc, char **argv)
     bool use_intel_rgbd = false;
     bool use_camera = false;
     std::vector<Matrix> pose_matrix_gt;
-    if(argc == 4)
-    {   display_ground_truth = true;
-        cerr << "Display ground truth trajectory" << endl;
-        // load ground truth pose
-        string filename_pose = string(argv[3]);
-        pose_matrix_gt = loadPoses(filename_pose);
+    // if(argc == 4)
+    // {   display_ground_truth = true;
+    //     cerr << "Display ground truth trajectory" << endl;
+    //     // load ground truth pose
+    //     //string filename_pose = string(argv[3]); ///home/selbizo/CV/dataset/sequences/00/ ../calibration/kitti00.yaml
+    //     string filename_pose = string("/home/selbizo/CV/dataset/sequences/00/");
+    //     pose_matrix_gt = loadPoses(filename_pose);
+    // }
 
-    }
-    if(argc < 3)
-    {
-        cerr << "Usage: ./run path_to_sequence(rgbd for using intel rgbd) path_to_calibration [optional]path_to_ground_truth_pose" << endl;
-        return 1;
-    }
+    //string filename_pose = string("/home/selbizo/CV/dataset/sequences/00/");
+    //pose_matrix_gt = loadPoses(filename_pose);
+    // if(argc < 3)
+    // {
+    //     cerr << "Usage: ./run path_to_sequence(rgbd for using intel rgbd) path_to_calibration [optional]path_to_ground_truth_pose" << endl;
+    //     return 1;
+    // }
 
     // Sequence
-    string filepath = string(argv[1]);
+    //string filepath = string(argv[1]);
+    string filepath = string("/home/selbizo/CV/dataset/sequences/00/");
     cout << "Filepath: " << filepath << endl;
 
     if(filepath == "rgbd") use_intel_rgbd = true;
     if(filepath == "camera") use_camera = true;
 
     // Camera calibration
-    string strSettingPath = string(argv[2]);
+    //string strSettingPath = string(argv[2]);
+    string strSettingPath = string("../calibration/kitti00.yaml");
     cout << "Calibration Filepath: " << strSettingPath << endl;
 
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
@@ -139,11 +145,11 @@ int main(int argc, char **argv)
     std::vector<FeaturePoint> oldFeaturePointsLeft;
     std::vector<FeaturePoint> currentFeaturePointsLeft;
 
-    for (int frame_id = init_frame_id+1; frame_id < 480000000; frame_id++)
+    for (int frame_id = init_frame_id+1; frame_id < 4800000; frame_id++)
     //for(;;)
     {
 
-        std::cout << std::endl << "frame id " << frame_id << std::endl;
+        //std::cout << std::endl << "frame id " << frame_id << std::endl;
         // ------------
         // Load images
         // ------------
@@ -213,7 +219,7 @@ int main(int argc, char **argv)
 	clock_t tic_gpu = clock();
         trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0, pointsLeft_t1, points3D_t0, rotation, translation, false);
 	clock_t toc_gpu = clock();
-	std::cerr << "tracking frame 2 frame: " << float(toc_gpu - tic_gpu)/CLOCKS_PER_SEC*1000 << "ms" << std::endl;
+	// std::cerr << "tracking frame 2 frame: " << float(toc_gpu - tic_gpu)/CLOCKS_PER_SEC*1000 << "ms" << std::endl;
         displayTracking(imageLeft_t1, pointsLeft_t0, pointsLeft_t1);
 
 
@@ -242,8 +248,8 @@ int main(int argc, char **argv)
         t_b = clock();
         float frame_time = 1000*(double)(t_b-t_a)/CLOCKS_PER_SEC;
         float fps = 1000/frame_time;
-        cout << "[Info] frame times (ms): " << frame_time << endl;
-        cout << "[Info] FPS: " << fps << endl;
+        //cout << "[Info] frame times (ms): " << frame_time << endl;
+        //cout << "[Info] FPS: " << fps << endl;
 
         // std::cout << "rigid_body_transformation" << rigid_body_transformation << std::endl;
         // std::cout << "rotation: " << rotation_euler << std::endl;
@@ -253,6 +259,10 @@ int main(int argc, char **argv)
 
         cv::Mat xyz = frame_pose.col(3).clone();
         display(frame_id, trajectory, xyz, pose_matrix_gt, fps, display_ground_truth);
+
+        int key = cv::waitKey(3);
+        if (key == 27)
+            break;
     }
 
     return 0;
