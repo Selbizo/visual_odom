@@ -1,14 +1,4 @@
-#include <opencv2/core.hpp>          // Mat, Scalar
-#include <opencv2/imgproc.hpp>       // ellipse, normalize
-#include <opencv2/highgui.hpp>       // imshow
-#include <opencv2/core/cuda.hpp>     // GpuMat
-#include <opencv2/cudaarithm.hpp>    // sum, divide
-#include <opencv2/cudaimgproc.hpp>   // 
-
-// ����������� ��������� C++
-#include <vector>    // std::vector
-#include <iostream>  // std::cout
-#include <thread>	 //std::thread
+#include "wienerFilter.hpp"
 
 using namespace cv;
 using namespace std;

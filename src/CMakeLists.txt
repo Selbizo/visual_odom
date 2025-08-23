@@ -9,6 +9,8 @@ include_directories(${OpenCV_INCLUDE_DIRS} )
 include_directories(evaluate)
 
 add_subdirectory(videoStabilization)
+
+
 include_directories(${OpenCV_INCLUDE_DIRS} )
 include_directories(videoStabilization)
 
