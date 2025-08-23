@@ -109,11 +109,12 @@ int main()
     //cv::VideoCapture captureLeft(0);
     cv::VideoCapture captureLeft("http://192.168.8.106:4747/video?640x480");
     
+    
     if(use_intel_rgbd)
     {   
         pCamera = new Intel_V4L2;
         for (int throw_frames = 10 ; throw_frames >=0 ; throw_frames--)
-            pCamera->getLRFrames(imageLeft_t0,imageRight_t0);
+        pCamera->getLRFrames(imageLeft_t0,imageRight_t0);
     }
     else if (use_camera &&! use_intel_rgbd)
     {
