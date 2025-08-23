@@ -7,7 +7,7 @@
 #include <opencv2/cudaarithm.hpp>    // CUDA(sum, divide)
 #include <opencv2/cudaimgproc.hpp>   // CUDA
 
-// ����������� ��������� C++
+//  C++
 #include <vector>    // std::vector
 #include <iostream>  // std::cout
 #include <thread>	 //std::thread

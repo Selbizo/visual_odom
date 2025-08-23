@@ -23,6 +23,8 @@
 #include "camera_object.h"
 #include "rgbd_standalone.h"
 
+
+#include "basicFunctions.hpp"
 using namespace std;
 
 // int main(int argc, char **argv)
