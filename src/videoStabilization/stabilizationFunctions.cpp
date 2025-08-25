@@ -17,6 +17,20 @@ using namespace cv;
 using namespace std;
 
 
+void createDetectors(Ptr<cuda::CornersDetector>& d_features, Ptr<cuda::CornersDetector>& d_features_small,
+			Ptr<cuda::SparsePyrLKOpticalFlow>& d_pyrLK_sparse)
+{
+	d_features = cv::cuda::createGoodFeaturesToTrackDetector(srcType,
+		maxCorners, qualityLevel, minDistance, blockSize, useHarrisDetector, harrisK);
+		
+	d_features_small = cv::cuda::createGoodFeaturesToTrackDetector(srcType,
+		20, qualityLevel*1.5, minDistance*1.5, blockSize, useHarrisDetector, harrisK);
+	
+	d_pyrLK_sparse = cuda::SparsePyrLKOpticalFlow::create(
+		cv::Size(winSize, winSize), maxLevel, iters);
+}
+
+
 void initFirstFrame(VideoCapture& capture, Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gOldCompressed, cuda::GpuMat& gOldGray,
 	cuda::GpuMat& gP0, vector<Point2f>& p0,
 	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,

@@ -11,11 +11,11 @@
 #include <iostream>  
 #include <thread>    
 #include <mutex>     
-
+#include <filesystem>
 
 using namespace cv;
 using namespace std;
-
+//namespace fs = std::filesystem;
 
 // 
 const double DEG_TO_RAD = CV_PI / 180.0;
@@ -90,6 +90,12 @@ struct TransformParam
 		T.at<double>(1, 2) = b*atan((dy)*0.4)/4 + rng.uniform(-10, 10);
 	}
 };
+
+
+//int createFolders(vector <std::string>& folderPath);
+
+void createPointColors(vector<Scalar>& colors, RNG& rng);
+
 
 static void download(const cuda::GpuMat& d_mat, vector<Point2f>& vec);
 

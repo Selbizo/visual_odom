@@ -15,9 +15,13 @@
 #include <vector>    // std::vector
 #include <iostream>  // std::cout
 #include "basicFunctions.hpp"
+#include "ConfigVideoStab.hpp"
 
 using namespace cv;
 using namespace std;
+
+void createDetectors(Ptr<cuda::CornersDetector>& d_features, Ptr<cuda::CornersDetector>& d_features_small,
+			Ptr<cuda::SparsePyrLKOpticalFlow>& d_pyrLK_sparse);
 
 void initFirstFrame(VideoCapture& capture, Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gOldCompressed, cuda::GpuMat& gOldGray,
 	cuda::GpuMat& gP0, vector<Point2f>& p0,

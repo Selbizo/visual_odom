@@ -1,48 +1,70 @@
 //Алгоритм стабилизации видео на основе вычисление Lucas-Kanade Optical Flow
 
-#include "ConfigVideoStab.hpp"
+#include "Config.hpp"
 #include "basicFunctions.hpp"
 #include "stabilizationFunctions.hpp"
 #include "wienerFilter.hpp"
-
+#include <filesystem>
 
 using namespace cv;
 using namespace std;
+namespace fs = std::filesystem;
 
 int videoStabilization()
 {
-	//initialisaton
-	// int rst;
-	vector <std::string> folderPath(4);
-	//rst = createFolders(folderPath);
+	//Автоматическое создание папок
+	vector <std::string> folderPath(4); 
+	folderPath[0] = "./OutputVideos";
+	folderPath[1] = "./OutputResults";
+	folderPath[2] = "./SourceVideos";
+	folderPath[3] = "./SourceVideosAuto";
+    for (int tmp = 0; tmp < folderPath.size(); tmp++)
+	{
 
+		// Проверяем и создаём папку (если нужно)
+		if (!fs::exists(folderPath[tmp])) {
+			if (!fs::create_directory(folderPath[tmp])) {
+				std::cerr << "Failed to create directory!" << std::endl;
+				return -1;
+			}
+		}
+	}
+	
 	// Создадим массив случайных цветов для цветов характерных точек
 	vector<Scalar> colors;
 	RNG rng;
-	createPointColors(colors, rng);
-
-	
+	for (int i = 0; i < 1000; i++)
+	{
+		unsigned short b = rng.uniform(120, 255);
+		unsigned short g = rng.uniform( 60, 190);
+		unsigned short r = rng.uniform(165, 225);
+		colors.push_back(Scalar(b, g, r));
+	}
 	// детектор для поиска характерных точек
-	Ptr<cuda::CornersDetector> d_features;
-	Ptr<cuda::CornersDetector> d_features_small;
-	Ptr<cuda::SparsePyrLKOpticalFlow> d_pyrLK_sparse;
-	createDetectors(d_features, d_features_small, d_pyrLK_sparse);
+	Ptr<cuda::CornersDetector > d_features = cv::cuda::createGoodFeaturesToTrackDetector(srcType,
+		maxCorners, qualityLevel, minDistance, blockSize, useHarrisDetector, harrisK);
+		
 
-	//create current arguments and arrays
-	Mat oldFrame, oldGray, err;
+	Ptr<cuda::CornersDetector > d_features_small = cv::cuda::createGoodFeaturesToTrackDetector(srcType,
+		20, qualityLevel*1.5, minDistance*1.5, blockSize, useHarrisDetector, harrisK);
 	
+
+	Ptr<cuda::SparsePyrLKOpticalFlow> d_pyrLK_sparse = cuda::SparsePyrLKOpticalFlow::create(
+		cv::Size(winSize, winSize), maxLevel, iters);
+
+	Mat oldFrame, oldGray, err;
+
 	vector<Point2f> p0, p1, good_new;
 	cuda::GpuMat gP0, gP1;
 
 	Point2f d = Point2f(0.0f, 0.0f);
 	Point2f meanP0 = Point2f(0.0f, 0.0f);
-
 	Mat T, TStab(2, 3, CV_64F), TStabInv(2, 3, CV_64F), TSearchPoints(2, 3, CV_64F);
 	cuda::GpuMat gT, gTStab(2, 3, CV_64F);
 
+
 	vector<uchar> status;
 	cuda::GpuMat gStatus, gErr;
-	
 	double tauStab = 100.0;
 	double kSwitch = 0.01;
 	double framePart = 0.8;
@@ -73,9 +95,10 @@ int videoStabilization()
 
 	}
 
-	//init KF
 
-	// System dimensions
+	//Фильтр Калмана
+
+		// System dimensions
 	int state_dim = 9;  // vx, vy, ax, ay
 	int meas_dim = 3;   // vx, vy
 
@@ -93,24 +116,34 @@ int videoStabilization()
 		0,	0,	0,	0,	0,	0,	1,	dt,	dt2,//vroll
 		0,	0,	0,	0,	0,	0,	0,	1,	dt,	//aroll
 		0,	0,	0,	0,	0,	0,	0,	0,	1	//a2roll 
+
 		);
 
 	cv::Mat C = (cv::Mat_<double>(meas_dim, state_dim) <<
-		1, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, 1, 0, 0, 0, 0, 0, 0, 0,
-		0, 0, 0, 0, 0, 0, 1, 0, 0
+		1, 0, 0, 0, 0, 0, 0,0,0,
+		0, 1, 0, 0, 0, 0, 0,0,0,
+		0, 0, 0, 0, 0, 0, 1,0,0
 		);
+
 	
 	cv::Mat Q = cv::Mat::eye(state_dim, state_dim, CV_64F) * 0.00001;	//low value
 	cv::Mat R = cv::Mat::eye(meas_dim, meas_dim, CV_64F) * 10000.0;		//high value
 	cv::Mat P = cv::Mat::eye(state_dim, state_dim, CV_64F) * 1.0;
-	
-	// Create KF
+	/**
+ * Create a Kalman filter with the specified matrices.
+ *   A - System dynamics matrix
+ *   C - Output matrix
+ *   Q - Process noise covariance
+ *   R - Measurement noise covariance
+ *   P - Estimate error covariance
+ */
+	// Create Kalman filter
 	KalmanFilterCV kf(dt, A, C, Q, R, P);
 
 	// Initialize with first measurement
 	cv::Mat x0 = (cv::Mat_<double>(state_dim, 1) << 0,0,0, 0,0,0, 0,0,0);
 	kf.init(0, x0);
+
 
 	// переменные для фильтра Виннера
 	Mat Hw, h, gray_wiener;
@@ -247,6 +280,7 @@ int videoStabilization()
 		}
 	}
 
+
 	//~~~~~~~~~~~~~~~~~~~~~~~~~~~Создадим маску для нахождения точек~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	Mat maskSearch = Mat::zeros(cv::Size(a / compression , b / compression ), CV_8U);
 	cv::rectangle(maskSearch, Rect(a * (1.0 - 0.9) / compression / 2, b * (1.0 - 0.9) / compression / 2, a * 0.9, b * 0.9 / compression ), 
@@ -334,7 +368,8 @@ int videoStabilization()
 			for (uint i = 0; i < p1.size(); ++i)
 			{
 				if (status[i] && p1[i].x < (double)(a*31 / 32) && p1[i].x > (double)(a * 1 / 32) && 
-					p1[i].y < (double)(b * 31 / 32) && p1[i].y > (double)(b * 1 / 16))
+					p1[i].y < (double)(b * 31 / 32) && p1[i].y > (double)(b * 1 / 16) 
+					)
 				{
 					good_new.push_back(p1[i]);
 				}
@@ -351,6 +386,7 @@ int videoStabilization()
 				removeFramePoints(p0, minDistance*0.8);
 			}
 
+			
 			gGray.copyTo(gOldGray);
 			gP0.upload(p0);
 			if (kSwitch < 0.01)

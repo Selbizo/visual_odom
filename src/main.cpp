@@ -23,8 +23,11 @@
 #include "camera_object.h"
 #include "rgbd_standalone.h"
 
+//#include "ConfigVideoStab.hpp"
+//#include "basicFunctions.hpp"
+#include "stabilizationFunctions.hpp"
+#include "wienerFilter.hpp"
 
-#include "basicFunctions.hpp"
 using namespace std;
 
 // int main(int argc, char **argv)
@@ -103,6 +106,144 @@ int main()
     cv::Mat points4D, points3D;
     int init_frame_id = 0;
 
+    //--------------------------------
+    // Initialize variables VideoStab
+    //--------------------------------
+    //initialisaton
+	// int rst;
+	vector <std::string> folderPath(4);
+	//rst = createFolders(folderPath);
+
+	// Создадим массив случайных цветов для цветов характерных точек
+	vector<Scalar> colors;
+	RNG rng;
+	createPointColors(colors, rng);
+
+	
+	// детектор для поиска характерных точек
+	Ptr<cuda::CornersDetector> d_features;
+	Ptr<cuda::CornersDetector> d_features_small;
+	Ptr<cuda::SparsePyrLKOpticalFlow> d_pyrLK_sparse;
+	createDetectors(d_features, d_features_small, d_pyrLK_sparse);
+
+	//create current arguments and arrays
+	Mat oldFrame, oldGray, err;
+	
+	vector<Point2f> p0, p1, good_new;
+	cuda::GpuMat gP0, gP1;
+
+	Point2f d = Point2f(0.0f, 0.0f);
+	Point2f meanP0 = Point2f(0.0f, 0.0f);
+
+	Mat T, TStab(2, 3, CV_64F), TStabInv(2, 3, CV_64F), TSearchPoints(2, 3, CV_64F);
+	cuda::GpuMat gT, gTStab(2, 3, CV_64F);
+
+	vector<uchar> status;
+	cuda::GpuMat gStatus, gErr;
+	
+	double tauStab = 100.0;
+	double kSwitch = 0.01;
+	double framePart = 0.8;
+
+	vector <TransformParam> transforms(4);
+	for (int i = 0; i < transforms.size();i++)
+	{
+		transforms[i].dx = 0.0;
+		transforms[i].dy = 0.0;
+		transforms[i].da = 0.0;
+	}
+	vector <TransformParam> movement(4);
+	
+	for (int i = 0; i < movement.size();i++)
+	{
+		movement[i].dx = 0.0;
+		movement[i].dy = 0.0;
+		movement[i].da = 0.0;
+	}
+
+	vector <TransformParam> movementKalman(4);
+
+	for (int i = 0; i < movementKalman.size();i++)
+	{
+		movementKalman[i].dx = 0.0;
+		movementKalman[i].dy = 0.0;
+		movementKalman[i].da = 0.0;
+
+	}
+
+	//init KF
+
+	// System dimensions
+	int state_dim = 9;  // vx, vy, ax, ay
+	int meas_dim = 3;   // vx, vy
+
+	// Create system matrices
+	double FPS = 30.0;
+	double dt = 1; //1/ FPS;
+	double dt2 = dt*dt/2;
+	cv::Mat A = (cv::Mat_<double>(state_dim, state_dim) <<
+		1,	0,	dt,	0,	dt2,0,	0,	0,	0,	//vx	
+		0,	1,	0,	dt,	0,	dt2,0,	0,	0,	//vy
+		0,	0,	1,	0,	dt,	0,	0,	0,	0,	//ax
+		0,	0,	0,	1,	0,	dt,	0,	0,	0,	//ay
+		0,	0,	0,	0,	1,	0,	0,	0,	0,	//a2x
+		0,	0,	0,	0,	0,	1,	0,	0,	0,	//a2y
+		0,	0,	0,	0,	0,	0,	1,	dt,	dt2,//vroll
+		0,	0,	0,	0,	0,	0,	0,	1,	dt,	//aroll
+		0,	0,	0,	0,	0,	0,	0,	0,	1	//a2roll 
+		);
+
+	cv::Mat C = (cv::Mat_<double>(meas_dim, state_dim) <<
+		1, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 1, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 1, 0, 0
+		);
+	
+	cv::Mat Q = cv::Mat::eye(state_dim, state_dim, CV_64F) * 0.00001;	//low value
+	cv::Mat R = cv::Mat::eye(meas_dim, meas_dim, CV_64F) * 10000.0;		//high value
+	cv::Mat P = cv::Mat::eye(state_dim, state_dim, CV_64F) * 1.0;
+	
+	// Create KF
+	KalmanFilterCV kf(dt, A, C, Q, R, P);
+
+	// Initialize with first measurement
+	cv::Mat x0 = (cv::Mat_<double>(state_dim, 1) << 0,0,0, 0,0,0, 0,0,0);
+	kf.init(0, x0);
+
+	// переменные для фильтра Виннера
+	Mat Hw, h, gray_wiener;
+	cuda::GpuMat gHw, gH, gGrayWiener;
+
+	bool wiener = false;
+	bool threadwiener = false;
+	double nsr = 0.01;
+	double qWiener = 8.0; // скважность считывания кадра на камере (выдержка к частоте кадров) (умножена на 10)
+	double LEN = 0;
+	double THETA = 0.0;
+
+	//для обработки трех каналов по Виннеру
+	vector<Mat> channels(3), channelsWiener(3);
+	Mat frame_wiener;
+
+	vector<cuda::GpuMat> gChannels(3), gChannelsWiener(3);
+	cuda::GpuMat gFrameWiener;
+
+	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~ для счетчика кадров в секунду ~~~~~~~~~~~~~~~~~~~~~~~~~~~//
+	unsigned int frameCnt = 0;
+	double seconds = 0.05;
+	double secondsGPUPing = 0.0;
+	double secondsFullPing = 0.0;
+	clock_t start = clock();
+	clock_t end = clock();
+
+	clock_t startFullPing = clock();
+	clock_t endFullPing = clock();
+
+	clock_t startGPUPing = clock();
+	clock_t endGPUPing = clock();
+
+    
+
     // ------------------------
     // Load first images
     // ------------------------
@@ -141,6 +282,15 @@ int main()
         loadImageRight(imageRight_t0_color, imageRight_t0, init_frame_id, filepath);
     }
     clock_t t_a, t_b;
+
+    //------------------------------------------
+    // First frame VidStab
+    //------------------------------------------
+
+
+
+
+
 
     // -----------------------------------------
     // Run visual odometry

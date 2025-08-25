@@ -16,19 +16,40 @@
 
 using namespace cv;
 using namespace std;
+//namespace fs = std::filesystem;
+
+// int createFolders(vector <std::string>& folderPath)
+// {
+// 	//Автоматическое создание папок
+// 	//vector <std::string> folderPath(4); 
+// 	folderPath[0] = "./OutputVideos";
+// 	folderPath[1] = "./OutputResults";
+// 	folderPath[2] = "./SourceVideos";
+// 	folderPath[3] = "./SourceVideosAuto";
+//     for (int tmp = 0; tmp < folderPath.size(); tmp++)
+// 	{
+// 		// Проверяем и создаём папку (если нужно)
+// 		if (!fs::exists(folderPath[tmp])) {
+// 			if (!fs::create_directory(folderPath[tmp])) {
+// 				std::cerr << "Failed to create directory!" << std::endl;
+// 				return -1;
+// 			}
+// 		}
+// 	}
+// 	return 0;
+// }
 
 
-// 
-// const double DEG_TO_RAD = CV_PI / 180.0;
-// const double RAD_TO_DEG = 180.0 / CV_PI;
-
-// Scalar colorRED   (48, 62,  255);
-// Scalar colorYELLOW(5,  188, 251);
-// Scalar colorGREEN (82, 156,  23);
-// Scalar colorBLUE  (239,107,  23);
-// Scalar colorPURPLE(180,  0, 180);
-// Scalar colorWHITE (255,255, 255);
-// Scalar colorBLACK (0,    0,   0);
+void createPointColors(vector<Scalar>& colors, RNG& rng)
+{
+	for (int i = 0; i < 1000; i++)
+	{
+		unsigned short b = rng.uniform(120, 255);
+		unsigned short g = rng.uniform( 60, 190);
+		unsigned short r = rng.uniform(165, 225);
+		colors.push_back(Scalar(b, g, r));
+	}
+}
 
 static void download(const cuda::GpuMat& d_mat, vector<Point2f>& vec)
 {
