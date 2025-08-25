@@ -1,4 +1,4 @@
-#include "wienerFilter.hpp"
+#include "wienerFilter.h"
 
 using namespace cv;
 using namespace std;

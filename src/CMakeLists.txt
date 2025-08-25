@@ -1,18 +1,13 @@
-
 find_package( OpenCV REQUIRED )
 
 
-add_subdirectory(evaluate)
-
-
-include_directories(${OpenCV_INCLUDE_DIRS} )
-include_directories(evaluate)
-
 add_subdirectory(videoStabilization)
-
-
 include_directories(${OpenCV_INCLUDE_DIRS} )
 include_directories(videoStabilization)
+
+add_subdirectory(evaluate)
+include_directories(${OpenCV_INCLUDE_DIRS} )
+include_directories(evaluate)
 
 if(USE_CUDA)
     find_package(CUDA)
@@ -25,7 +20,6 @@ add_library(bucket SHARED "bucket.cpp")
 add_library(utils SHARED "utils.cpp")
 add_library(visualOdometry SHARED "visualOdometry.cpp")
 add_library(rgbd_standalone SHARED "rgbd_standalone.cpp")
-
 
 
 add_library(Frame SHARED "Frame.cpp")
@@ -42,4 +36,39 @@ target_link_libraries( visualOdometry utils bucket feature ${OpenCV_LIBS})
 
 
 target_link_libraries( Frame ${OpenCV_LIBS} )
-target_link_libraries( run ${OpenCV_LIBS} bucket feature utils visualOdometry Frame rgbd_standalone )
+target_link_libraries( run ${OpenCV_LIBS} bucket feature utils visualOdometry Frame rgbd_standalone 
+                        basicFunctions stabilizationFunctions wienerFilter)
+
+
+
+
+
+
+
+
+
+
+
+
+# find_package( OpenCV REQUIRED )
+
+
+# add_subdirectory(videoStabilization)
+# include_directories(${OpenCV_INCLUDE_DIRS} )
+# include_directories(videoStabilization)
+
+
+# if(USE_CUDA)
+#     find_package(CUDA)
+#     include_directories("${CUDA_INCLUDE_DIRS}")
+#     add_definitions(-DUSE_CUDA)
+# endif(USE_CUDA)
+
+
+# add_executable( run videoStabilization.cpp )
+# target_link_libraries( run ${OpenCV_LIBS} basicFunctions stabilizationFunctions wienerFilter)
+
+
+
+
+

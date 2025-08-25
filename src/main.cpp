@@ -23,12 +23,15 @@
 #include "camera_object.h"
 #include "rgbd_standalone.h"
 
-//#include "ConfigVideoStab.hpp"
-//#include "basicFunctions.hpp"
-#include "stabilizationFunctions.hpp"
-#include "wienerFilter.hpp"
+//#include "ConfigVideoStab.h"
+#include "basicFunctions.h"
+#include "stabilizationFunctions.h"
+// #include "wienerFilter.h"
+// #include "basicStructs.h"
+
 
 using namespace std;
+using namespace cv;
 
 // int main(int argc, char **argv)
 int main()
@@ -109,67 +112,65 @@ int main()
     //--------------------------------
     // Initialize variables VideoStab
     //--------------------------------
+    
     //initialisaton
-	// int rst;
-	vector <std::string> folderPath(4);
-	//rst = createFolders(folderPath);
+	std::vector <std::string> folderPath(4);
 
 	// Создадим массив случайных цветов для цветов характерных точек
-	vector<Scalar> colors;
-	RNG rng;
-	createPointColors(colors, rng);
-
-	
+	std::vector<cv::Scalar> colors;
+	cv::RNG rng;
+    createPointColors(colors, rng);
 	// детектор для поиска характерных точек
 	Ptr<cuda::CornersDetector> d_features;
 	Ptr<cuda::CornersDetector> d_features_small;
 	Ptr<cuda::SparsePyrLKOpticalFlow> d_pyrLK_sparse;
 	createDetectors(d_features, d_features_small, d_pyrLK_sparse);
-
+    
 	//create current arguments and arrays
 	Mat oldFrame, oldGray, err;
 	
 	vector<Point2f> p0, p1, good_new;
 	cuda::GpuMat gP0, gP1;
-
+    
 	Point2f d = Point2f(0.0f, 0.0f);
 	Point2f meanP0 = Point2f(0.0f, 0.0f);
-
+    
 	Mat T, TStab(2, 3, CV_64F), TStabInv(2, 3, CV_64F), TSearchPoints(2, 3, CV_64F);
 	cuda::GpuMat gT, gTStab(2, 3, CV_64F);
-
+    
 	vector<uchar> status;
 	cuda::GpuMat gStatus, gErr;
 	
 	double tauStab = 100.0;
 	double kSwitch = 0.01;
 	double framePart = 0.8;
-
+    
 	vector <TransformParam> transforms(4);
 	for (int i = 0; i < transforms.size();i++)
 	{
-		transforms[i].dx = 0.0;
-		transforms[i].dy = 0.0;
-		transforms[i].da = 0.0;
-	}
-	vector <TransformParam> movement(4);
-	
-	for (int i = 0; i < movement.size();i++)
-	{
-		movement[i].dx = 0.0;
-		movement[i].dy = 0.0;
-		movement[i].da = 0.0;
-	}
-
-	vector <TransformParam> movementKalman(4);
-
-	for (int i = 0; i < movementKalman.size();i++)
-	{
-		movementKalman[i].dx = 0.0;
-		movementKalman[i].dy = 0.0;
-		movementKalman[i].da = 0.0;
-
-	}
+        transforms[i].dx = 0.0;
+        transforms[i].dy = 0.0;
+        transforms[i].da = 0.0;
+    }
+    vector <TransformParam> movement(4);
+    
+    for (int i = 0; i < movement.size();i++)
+    {
+        movement[i].dx = 0.0;
+        movement[i].dy = 0.0;
+        movement[i].da = 0.0;
+    }
+    
+    vector <TransformParam> movementKalman(4);
+    
+    for (int i = 0; i < movementKalman.size();i++)
+    {
+        movementKalman[i].dx = 0.0;
+        movementKalman[i].dy = 0.0;
+        movementKalman[i].da = 0.0;
+        
+    }
+    
 
 	//init KF
 

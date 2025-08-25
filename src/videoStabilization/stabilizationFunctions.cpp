@@ -11,7 +11,7 @@
 // #include <iostream>  // std::cout
 
 
-#include "stabilizationFunctions.hpp"
+#include "stabilizationFunctions.h"
 
 using namespace cv;
 using namespace std;
@@ -19,6 +19,7 @@ using namespace std;
 
 void createDetectors(Ptr<cuda::CornersDetector>& d_features, Ptr<cuda::CornersDetector>& d_features_small,
 			Ptr<cuda::SparsePyrLKOpticalFlow>& d_pyrLK_sparse)
+			//,int srcType, int& maxCorners, double& qualityLevel, double& minDistance, int blockSize, bool useHarrisDetector, double& harrisK)
 {
 	d_features = cv::cuda::createGoodFeaturesToTrackDetector(srcType,
 		maxCorners, qualityLevel, minDistance, blockSize, useHarrisDetector, harrisK);
