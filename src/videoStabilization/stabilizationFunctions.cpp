@@ -530,3 +530,11 @@ void iirAdaptive(vector<TransformParam>& transforms, double& tau_stab, Rect& roi
 	movementKalman[0].dx = movementKalman[1].dx + movementKalman[0].dx*0.988; //coordinate
 
 }
+
+
+void addGaussianNoise(cv::Mat &image, double mean = 0, double stddev = 20) {
+    cv::Mat noise(image.size(), image.type());
+    cv::randn(noise, mean, stddev); // Генерация шума
+    image += noise; // Добавление шума к изображению
+}
+

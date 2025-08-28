@@ -104,10 +104,33 @@ int main()
     cv::Mat frame_pose32 = cv::Mat::eye(4, 4, CV_32F);
 
     std::cout << "frame_pose " << frame_pose << std::endl;
-    cv::Mat trajectory = cv::Mat::zeros(800, 1200, CV_8UC3);
+    cv::Mat trajectory = cv::Mat::zeros(800, 800, CV_8UC3);
     FeatureSet currentVOFeatures;
     cv::Mat points4D, points3D;
     int init_frame_id = 0;
+
+
+
+
+
+    //--------------------------------
+    // Initialize variables VideoShake
+    //--------------------------------
+    Mat Shake(2, 3, CV_64F);
+    TransformParam noiseIn = { 0.0, 0.0, 0.0 };
+                        vector <TransformParam> noiseOut(2);
+	for (int i = 0; i < noiseOut.size();i++)
+	{
+		noiseOut[i].dx = 0.0;
+		noiseOut[i].dy = 0.0;
+		noiseOut[i].da = 0.0;
+	}
+    vector <TransformParam> X(1+NCoef), Y(1 + NCoef);
+    
+    //--------------------------------
+    // END Initialize variables VideoShake
+    //--------------------------------
+
 
     //--------------------------------
     // Initialize variables VideoStab
@@ -218,7 +241,7 @@ int main()
 	bool wiener = false;
 	bool threadwiener = false;
 	double nsr = 0.01;
-	double qWiener = 8.0; // скважность считывания кадра на камере (выдержка к частоте кадров) (умножена на 10)
+	double qWiener = 8.0;
 	double LEN = 0;
 	double THETA = 0.0;
 
@@ -229,7 +252,7 @@ int main()
 	vector<cuda::GpuMat> gChannels(3), gChannelsWiener(3);
 	cuda::GpuMat gFrameWiener;
 
-	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~ для счетчика кадров в секунду ~~~~~~~~~~~~~~~~~~~~~~~~~~~//
+	// ~~~~~~~~~~~~~~ для счетчика кадров в секунду ~~~~~~~~~~~~~~~//
 	unsigned int frameCnt = 0;
 	double seconds = 0.05;
 	double secondsGPUPing = 0.0;
@@ -242,7 +265,9 @@ int main()
 
 	clock_t startGPUPing = clock();
 	clock_t endGPUPing = clock();
-
+    //------------------------------------
+    // END Initialize variables VideoStab
+    //------------------------------------
     
 
     // ------------------------
@@ -251,7 +276,9 @@ int main()
     cv::Mat imageRight_t0,  imageLeft_t0;
     CameraBase *pCamera = NULL;
     //cv::VideoCapture captureLeft(0);
+    //cv::VideoCapture captureRight(1);
     cv::VideoCapture captureLeft("http://192.168.8.106:4747/video?640x480");
+    cv::VideoCapture captureRight("http://192.168.8.107:4747/video?640x480");
     
     
     if(use_intel_rgbd)
@@ -267,13 +294,11 @@ int main()
         captureLeft >> imageLeft_t0_color;
         cvtColor(imageLeft_t0_color, imageLeft_t0, cv::COLOR_BGR2GRAY);
 
-        imageLeft_t0_color.copyTo(imageRight_t0_color);
-        imageLeft_t0.copyTo(imageRight_t0);
-        //cv::VideoCapture captureRight(0);
-        //captureRight >> imageRight_t0_color;
-        //cvtColor(imageRight_t0_color, imageRight_t0, cv::COLOR_BGR2GRAY);
+        //imageLeft_t0_color.copyTo(imageRight_t0_color);
+        // imageLeft_t0.copyTo(imageRight_t0);
+        captureRight >> imageRight_t0_color;
+        cvtColor(imageRight_t0_color, imageRight_t0, cv::COLOR_BGR2GRAY);
     }
-
     else
     {
         cv::Mat imageLeft_t0_color;
@@ -284,11 +309,26 @@ int main()
     }
     clock_t t_a, t_b;
 
+
+    // noiseIn.dx = (double)(rng.uniform(-10.0, 10.0))/4;// / 32 + noiseIn.dx * 31 / 32;
+    // noiseIn.dy = (double)(rng.uniform(-10.0, 10.0))/4;//    / 32 + noiseIn.dy * 31 / 32;
+    // noiseIn.da = (double)(rng.uniform(-1.0, 1.0));// / 32 + noiseIn.da * 31 / 32;
+
+    // noiseOut[0] = iirNoise(noiseIn, X,Y);
+
+    // noiseOut[0].getTransform(Shake);
+    // cv::warpAffine(imageLeft_t0, imageLeft_t0, Shake, imageLeft_t0.size());
+
     //------------------------------------------
     // First frame VidStab
     //------------------------------------------
 
 
+
+
+    //------------------------------------------
+    // END Initialize variables VideoStab
+    //------------------------------------------
 
 
 
@@ -319,20 +359,28 @@ int main()
             captureLeft >> imageLeft_t1_color;
             cvtColor(imageLeft_t1_color, imageLeft_t1, cv::COLOR_BGR2GRAY);
 
-            imageLeft_t1_color.copyTo(imageRight_t1_color);
-            imageLeft_t1.copyTo(imageRight_t1);
+            //imageLeft_t1_color.copyTo(imageRight_t1_color);
+            //imageLeft_t1.copyTo(imageRight_t1);
             //cv::VideoCapture captureRight(0);
-            //captureRight >> imageRight_t0_color;
-            //cvtColor(imageRight_t0_color, imageRight_t0, cv::COLOR_BGR2GRAY);
+            captureRight >> imageRight_t1_color;
+            cvtColor(imageRight_t1_color, imageRight_t1, cv::COLOR_BGR2GRAY);
         }
         else
         {
             cv::Mat imageLeft_t1_color;
-            loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id, filepath);        
+            loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id, filepath);  
             cv::Mat imageRight_t1_color;  
-            loadImageRight(imageRight_t1_color, imageRight_t1, frame_id, filepath);            
+            loadImageRight(imageRight_t1_color, imageRight_t1, frame_id, filepath);      
         }
 
+        noiseIn.dx = (double)(rng.uniform(-4.0, 4.0));
+        noiseIn.dy = (double)(rng.uniform(-4.0, 4.0));
+        //noiseIn.da = (double)(rng.uniform(-0.1, 0.1));
+
+        noiseOut[0] = iirNoise(noiseIn, X,Y);
+
+        noiseOut[0].getTransform(Shake);
+        cv::warpAffine(imageLeft_t0, imageLeft_t0, Shake, imageLeft_t0.size());
 
         t_a = clock();
         std::vector<cv::Point2f> oldPointsLeft_t0 = currentVOFeatures.points;
