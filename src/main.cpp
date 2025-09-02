@@ -78,7 +78,7 @@ int main()
     cout << "Calibration Filepath: " << strSettingPath << endl;
 
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
-
+    unsigned int frame_skip = 1;
     
     float fx = fSettings["Camera.fx"];
     float fy = fSettings["Camera.fy"];
@@ -121,9 +121,7 @@ int main()
                         vector <TransformParam> noiseOut(2);
 	for (int i = 0; i < noiseOut.size();i++)
 	{
-		noiseOut[i].dx = 0.0;
-		noiseOut[i].dy = 0.0;
-		noiseOut[i].da = 0.0;
+		noiseOut[i] = {0.0, 0.0, 0.0};
 	}
     vector <TransformParam> X(1+NCoef), Y(1 + NCoef);
     
@@ -168,38 +166,24 @@ int main()
 	double kSwitch = 0.01;
 	double framePart = 0.8;
     
-	vector <TransformParam> transforms(4);
-	for (int i = 0; i < transforms.size();i++)
+	const unsigned int firSize = 4;
+    vector <TransformParam> transforms(firSize);
+    vector <TransformParam> movement(firSize);
+    vector <TransformParam> movementKalman(firSize);
+
+	for (int i = 0; i < firSize;i++)
 	{
-        transforms[i].dx = 0.0;
-        transforms[i].dy = 0.0;
-        transforms[i].da = 0.0;
+        transforms[i] = {0.0, 0.0, 0.0};
+        movement[i] = {0.0, 0.0, 0.0};
+        movementKalman[i] = {0.0, 0.0, 0.0};        
     }
-    vector <TransformParam> movement(4);
-    
-    for (int i = 0; i < movement.size();i++)
-    {
-        movement[i].dx = 0.0;
-        movement[i].dy = 0.0;
-        movement[i].da = 0.0;
-    }
-    
-    vector <TransformParam> movementKalman(4);
-    
-    for (int i = 0; i < movementKalman.size();i++)
-    {
-        movementKalman[i].dx = 0.0;
-        movementKalman[i].dy = 0.0;
-        movementKalman[i].da = 0.0;
-        
-    }
-    
+     
 
 	//init KF
 
 	// System dimensions
-	int state_dim = 9;  // vx, vy, ax, ay
-	int meas_dim = 3;   // vx, vy
+	const int state_dim = 9;  // vx, vy, ax, ay
+	const int meas_dim = 3;   // vx, vy
 
 	// Create system matrices
 	double FPS = 30.0;
@@ -275,10 +259,10 @@ int main()
     // ------------------------
     cv::Mat imageRight_t0,  imageLeft_t0;
     CameraBase *pCamera = NULL;
-    //cv::VideoCapture captureLeft(0);
-    //cv::VideoCapture captureRight(1);
-    cv::VideoCapture captureLeft("http://192.168.8.106:4747/video?640x480");
-    cv::VideoCapture captureRight("http://192.168.8.107:4747/video?640x480");
+    cv::VideoCapture captureLeft;
+    cv::VideoCapture captureRight;
+    // cv::VideoCapture captureLeft("http://192.168.8.106:4747/video?640x480");
+    // cv::VideoCapture captureRight("http://192.168.8.107:4747/video?640x480");
     
     
     if(use_intel_rgbd)
@@ -309,15 +293,53 @@ int main()
     }
     clock_t t_a, t_b;
 
+    //init sizes of frames
 
-    // noiseIn.dx = (double)(rng.uniform(-10.0, 10.0))/4;// / 32 + noiseIn.dx * 31 / 32;
-    // noiseIn.dy = (double)(rng.uniform(-10.0, 10.0))/4;//    / 32 + noiseIn.dy * 31 / 32;
-    // noiseIn.da = (double)(rng.uniform(-1.0, 1.0));// / 32 + noiseIn.da * 31 / 32;
+	const int a = imageLeft_t0.cols;
+	const int b = imageLeft_t0.rows;
+	const double c = sqrt(a * a + b * b);
+	const double atan_ba = atan2(b, a);
 
-    // noiseOut[0] = iirNoise(noiseIn, X,Y);
+    //переменные для запоминания кадров и характерных точек
+	Mat frameShowOrigLeft(a, b, CV_8UC3),
+        frameShowOrigRight(a, b, CV_8UC3), 
+        frameOutLeft(a, b, CV_8UC3),
+        frameOutRight(a, b, CV_8UC3);
+	cuda::GpuMat gFrameStabilizedLeft(a, b, CV_8UC3),
+                 gFrameStabilizedRight(a, b, CV_8UC3);
 
-    // noiseOut[0].getTransform(Shake);
-    // cv::warpAffine(imageLeft_t0, imageLeft_t0, Shake, imageLeft_t0.size());
+	cuda::GpuMat gFrameLeft(a,b, CV_8UC3),
+                 gFrameRight(a,b, CV_8UC3), 
+                 gFrameShowOrigLeft(a, b, CV_8UC3),
+                 gFrameShowOrigRight(a, b, CV_8UC3),
+		gGrayLeft(a/compression, b / compression, CV_8UC1),
+        gGrayRight(a/compression, b / compression, CV_8UC1), 
+		gCompressedLeft(a / compression, b / compression, CV_8UC3),
+        gCompressedRight(a / compression, b / compression, CV_8UC3);
+
+	cuda::GpuMat gOldFrameLeft(a, b, CV_8UC3),
+                 gOldFrameRight(a, b, CV_8UC3), 
+		gOldGrayLeft(a / compression, b / compression, CV_8UC1),
+        gOldGrayRight(a / compression, b / compression, CV_8UC1),
+		gOldCompressedLeft(a / compression, b / compression, CV_8UC3),
+        gOldCompressedRight(a / compression, b / compression, CV_8UC3);
+	
+    cuda::GpuMat gToShowLeft(a, b, CV_8UC3),
+                 gToShowRight(a, b, CV_8UC3);
+
+	cuda::GpuMat gRoiGrayLeft, gRoiGrayRight;
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //~~~~~~~~~~~~~~~~~~
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    noiseIn.dx = (double)(rng.uniform(-10.0, 10.0))/4;// / 32 + noiseIn.dx * 31 / 32;
+    noiseIn.dy = (double)(rng.uniform(-10.0, 10.0))/4;//    / 32 + noiseIn.dy * 31 / 32;
+    noiseIn.da = (double)(rng.uniform(-1.0, 1.0));// / 32 + noiseIn.da * 31 / 32;
+
+    noiseOut[0] = iirNoise(noiseIn, X,Y);
+
+    noiseOut[0].getTransform(Shake);
+    cv::warpAffine(imageLeft_t0, imageLeft_t0, Shake, imageLeft_t0.size());
 
     //------------------------------------------
     // First frame VidStab
@@ -339,7 +361,7 @@ int main()
     std::vector<FeaturePoint> oldFeaturePointsLeft;
     std::vector<FeaturePoint> currentFeaturePointsLeft;
 
-    for (int frame_id = init_frame_id+1; frame_id < 4800000; frame_id++)
+    for (int frame_id = init_frame_id+1; frame_id < 4800000; frame_id+=frame_skip)
     //for(;;)
     {
 
@@ -373,9 +395,9 @@ int main()
             loadImageRight(imageRight_t1_color, imageRight_t1, frame_id, filepath);      
         }
 
-        noiseIn.dx = (double)(rng.uniform(-4.0, 4.0));
-        noiseIn.dy = (double)(rng.uniform(-4.0, 4.0));
-        //noiseIn.da = (double)(rng.uniform(-0.1, 0.1));
+        noiseIn.dx = (double)(rng.uniform(-40.0, 40.0));
+        noiseIn.dy = (double)(rng.uniform(-40.0, 40.0));
+        // noiseIn.da = (double)(rng.uniform(-0.1, 0.1));
 
         noiseOut[0] = iirNoise(noiseIn, X,Y);
 
@@ -419,7 +441,7 @@ int main()
         // Tracking transfomation
         // ---------------------
 	clock_t tic_gpu = clock();
-        trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0, pointsLeft_t1, points3D_t0, rotation, translation, false);
+        trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0, pointsLeft_t1, points3D_t0, rotation, translation, frame_skip, false);
 	clock_t toc_gpu = clock();
 	// std::cerr << "tracking frame 2 frame: " << float(toc_gpu - tic_gpu)/CLOCKS_PER_SEC*1000 << "ms" << std::endl;
         displayTracking(imageLeft_t1, pointsLeft_t0, pointsLeft_t1);
