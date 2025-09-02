@@ -104,7 +104,8 @@ int main()
     cv::Mat frame_pose32 = cv::Mat::eye(4, 4, CV_32F);
 
     std::cout << "frame_pose " << frame_pose << std::endl;
-    cv::Mat trajectory = cv::Mat::zeros(800, 800, CV_8UC3);
+    cv::Mat trajectory = cv::Mat::zeros(1400, 1400, CV_8UC3);
+    cv::Mat trajectory_biased = cv::Mat::zeros(900, 900, CV_8UC3);
     FeatureSet currentVOFeatures;
     cv::Mat points4D, points3D;
     int init_frame_id = 0;
@@ -373,14 +374,21 @@ int main()
             loadImageRight(imageRight_t1_color, imageRight_t1, frame_id, filepath);      
         }
 
-        noiseIn.dx = (double)(rng.uniform(-4.0, 4.0));
-        noiseIn.dy = (double)(rng.uniform(-4.0, 4.0));
-        //noiseIn.da = (double)(rng.uniform(-0.1, 0.1));
+        noiseIn.dx = (double)(rng.uniform(-20.0, 20.0));
+        noiseIn.dy = (double)(rng.uniform(-20.0, 20.0));
+        noiseIn.da = (double)(rng.uniform(-0.1, 0.1));
 
         noiseOut[0] = iirNoise(noiseIn, X,Y);
 
         noiseOut[0].getTransform(Shake);
         cv::warpAffine(imageLeft_t0, imageLeft_t0, Shake, imageLeft_t0.size());
+        cv::warpAffine(imageRight_t0, imageRight_t0, Shake, imageRight_t0.size());
+
+        //video stab begins
+        
+
+        //video stab ends
+
 
         t_a = clock();
         std::vector<cv::Point2f> oldPointsLeft_t0 = currentVOFeatures.points;
@@ -448,7 +456,7 @@ int main()
             std::cout << "Too large rotation"  << std::endl;
         }
         t_b = clock();
-        float frame_time = 1000*(double)(t_b-t_a)/CLOCKS_PER_SEC;
+        float frame_time = 1000*(double)(t_b-t_a)/CLOCKS_PER_SEC*2;
         float fps = 1000/frame_time;
         //cout << "[Info] frame times (ms): " << frame_time << endl;
         //cout << "[Info] FPS: " << fps << endl;
@@ -460,7 +468,7 @@ int main()
 
 
         cv::Mat xyz = frame_pose.col(3).clone();
-        display(frame_id, trajectory, xyz, pose_matrix_gt, fps, display_ground_truth);
+        display(frame_id, trajectory, trajectory_biased, xyz, pose_matrix_gt, fps, display_ground_truth);
 
         int key = cv::waitKey(3);
         if (key == 27)

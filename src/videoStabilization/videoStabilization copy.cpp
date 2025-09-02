@@ -1,9 +1,13 @@
 //Алгоритм стабилизации видео на основе вычисление Lucas-Kanade Optical Flow
 
-#include "Config.hpp"
-#include "basicFunctions.hpp"
-#include "stabilizationFunctions.hpp"
-#include "wienerFilter.hpp"
+// #include "Config.hpp"
+// #include "basicFunctions.h"
+// #include "stabilizationFunctions.h"
+// #include "wienerFilter.h"
+
+#include "basicFunctions.h"
+#include "stabilizationFunctions.h"
+#include "wienerFilter.h"
 #include <filesystem>
 
 using namespace cv;

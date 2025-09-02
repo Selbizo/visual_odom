@@ -12,7 +12,6 @@ using namespace std;
 int main()
 {
 	//initialisaton
-	// int rst;
 	vector <std::string> folderPath(4);
 	//rst = createFolders(folderPath);
 
@@ -23,8 +22,7 @@ int main()
 
 	
 	// детектор для поиска характерных точек
-	Ptr<cuda::CornersDetector> d_features;
-	Ptr<cuda::CornersDetector> d_features_small;
+	Ptr<cuda::CornersDetector> d_features, d_features_small;
 	Ptr<cuda::SparsePyrLKOpticalFlow> d_pyrLK_sparse;
 	createDetectors(d_features, d_features_small, d_pyrLK_sparse);
 
@@ -47,42 +45,27 @@ int main()
 	double kSwitch = 0.01;
 	double framePart = 0.8;
 
-	vector <TransformParam> transforms(4);
-	for (int i = 0; i < transforms.size();i++)
-	{
-		transforms[i].dx = 0.0;
-		transforms[i].dy = 0.0;
-		transforms[i].da = 0.0;
-	}
-	vector <TransformParam> movement(4);
-	
-	for (int i = 0; i < movement.size();i++)
-	{
-		movement[i].dx = 0.0;
-		movement[i].dy = 0.0;
-		movement[i].da = 0.0;
-	}
 
+	const size_t transformSize = 4;
+	vector <TransformParam> transforms(transformSize);
+	vector <TransformParam> movement(4);
 	vector <TransformParam> movementKalman(4);
 
-	for (int i = 0; i < movementKalman.size();i++)
-	{
-		movementKalman[i].dx = 0.0;
-		movementKalman[i].dy = 0.0;
-		movementKalman[i].da = 0.0;
-
-	}
-
+    for (int i = 0; i < transformSize; i++)
+    {
+        transforms[i] = {0.0, 0.0, 0.0};
+        movement[i] = {0.0, 0.0, 0.0};
+        movementKalman[i] = {0.0, 0.0, 0.0};
+    }
 	//init KF
 
 	// System dimensions
 	int state_dim = 9;  // vx, vy, ax, ay
 	int meas_dim = 3;   // vx, vy
-
-	// Create system matrices
 	double FPS = 30.0;
 	double dt = 1; //1/ FPS;
 	double dt2 = dt*dt/2;
+
 	cv::Mat A = (cv::Mat_<double>(state_dim, state_dim) <<
 		1,	0,	dt,	0,	dt2,0,	0,	0,	0,	//vx	
 		0,	1,	0,	dt,	0,	dt2,0,	0,	0,	//vy
@@ -101,8 +84,8 @@ int main()
 		0, 0, 0, 0, 0, 0, 1, 0, 0
 		);
 	
-	cv::Mat Q = cv::Mat::eye(state_dim, state_dim, CV_64F) * 0.00001;	//low value
-	cv::Mat R = cv::Mat::eye(meas_dim, meas_dim, CV_64F) * 10000.0;		//high value
+	cv::Mat Q = cv::Mat::eye(state_dim, state_dim, CV_64F) * 0.001;	//low value
+	cv::Mat R = cv::Mat::eye(meas_dim, meas_dim, CV_64F) * 100.0;		//high value
 	cv::Mat P = cv::Mat::eye(state_dim, state_dim, CV_64F) * 1.0;
 	
 	// Create KF
@@ -113,23 +96,14 @@ int main()
 	kf.init(0, x0);
 
 	// переменные для фильтра Виннера
-	Mat Hw, h, gray_wiener;
-	cuda::GpuMat gHw, gH, gGrayWiener;
-
-	bool wiener = false;
-	bool threadwiener = false;
-	double nsr = 0.01;
-	double qWiener = 8.0; // скважность считывания кадра на камере (выдержка к частоте кадров) (умножена на 10)
-	double LEN = 0;
-	double THETA = 0.0;
-
+	bool wiener = false, threadwiener = false;
+	double nsr = 0.01, qWiener = 8.0, LEN = 0, THETA = 0.0;
+	Mat Hw, h, gray_wiener,frame_wiener;
+	cuda::GpuMat gHw, gH, gGrayWiener, gFrameWiener;
 	//для обработки трех каналов по Виннеру
 	vector<Mat> channels(3), channelsWiener(3);
-	Mat frame_wiener;
-
 	vector<cuda::GpuMat> gChannels(3), gChannelsWiener(3);
-	cuda::GpuMat gFrameWiener;
-
+	
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~ для счетчика кадров в секунду ~~~~~~~~~~~~~~~~~~~~~~~~~~~//
 	unsigned int frameCnt = 0;
 	double seconds = 0.05;
@@ -170,29 +144,36 @@ int main()
 	const double atan_ba = atan2(b, a);
 
 	//переменные для запоминания кадров и характерных точек
-	Mat frame(a, b, CV_8UC3), frameShowOrig(a, b, CV_8UC3), frameOut(a, b, CV_8UC3);
-	cuda::GpuMat gFrameStabilized(a, b, CV_8UC3);
+	Mat frame(a, b, CV_8UC3), 
+		frameShowOrig(a, b, CV_8UC3), 
+		frameOut(a, b, CV_8UC3);
+	cuda::GpuMat 
+		gFrameStabilized(a, b, CV_8UC3);
 
-	cuda::GpuMat gFrame(a,b, CV_8UC3), gFrameShowOrig(a, b, CV_8UC3),
+	cuda::GpuMat 
+		gFrame(a,b, CV_8UC3), 
+		gFrameShowOrig(a, b, CV_8UC3),
 		gGray(a/compression, b / compression, CV_8UC1), 
 		gCompressed(a / compression, b / compression, CV_8UC3);
 
-	cuda::GpuMat gOldFrame(a, b, CV_8UC3), 
+	cuda::GpuMat 
+		gOldFrame(a, b, CV_8UC3), 
 		gOldGray(a / compression, b / compression, CV_8UC1), 
-		gOldCompressed(a / compression, b / compression, CV_8UC3);
-	cuda::GpuMat gToShow(a, b, CV_8UC3);
+		gOldCompressed(a / compression, b / compression, CV_8UC3),
+		gToShow(a, b, CV_8UC3),
+		gRoiGray;
 
-	cuda::GpuMat gRoiGray;
-
-	Rect roi;
-	roi.x = a * ((1.0 - framePart) / 2.0);
-	roi.y = b * ((1.0 - framePart) / 2.0);
-	roi.width = a * framePart;
-	roi.height = b * framePart;
+	Rect roi(
+		a * ((1.0 - framePart) / 2.0),
+		b * ((1.0 - framePart) / 2.0),
+		a * framePart,
+		b * framePart
+	);
 
 	//~~~~~~~~~~~~~~~~~~~~~~~~~~~для вывода изображения на дисплей~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	Mat frameStabilizatedCropResized(a, b, CV_8UC3), frame_crop;
-	cuda::GpuMat gFrameStabilizatedCrop(roi.width, roi.height, CV_8UC3), 
+	cuda::GpuMat 
+		gFrameStabilizatedCrop(roi.width, roi.height, CV_8UC3), 
 		gFrameRoi(roi.width, roi.height, CV_8UC3),
 		gFrameOut(a, b, CV_8UC3),
 		gFrameStabilizatedCropResized(a, b, CV_8UC3),

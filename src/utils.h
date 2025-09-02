@@ -26,7 +26,7 @@
 // --------------------------------
 void drawFeaturePoints(cv::Mat image, std::vector<cv::Point2f>& points);
 
-void display(int frame_id, cv::Mat& trajectory, cv::Mat& pose, std::vector<Matrix>& pose_matrix_gt, float fps, bool showgt);
+void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::Mat& pose, std::vector<Matrix>& pose_matrix_gt, float fps, bool showgt);
 
 
 
