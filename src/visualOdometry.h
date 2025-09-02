@@ -39,6 +39,7 @@ void trackingFrame2Frame(cv::Mat& projMatrl, cv::Mat& projMatrr,
                          cv::Mat& points3D_t0,
                          cv::Mat& rotation,
                          cv::Mat& translation,
+                         unsigned int frame_skip,
                          bool mono_rotation=true);
 
 void displayTracking(cv::Mat& imageLeft_t1, 

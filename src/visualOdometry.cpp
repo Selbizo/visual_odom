@@ -135,6 +135,7 @@ void trackingFrame2Frame(cv::Mat& projMatrl, cv::Mat& projMatrr,
                          cv::Mat& points3D_t0,
                          cv::Mat& rotation,
                          cv::Mat& translation,
+                         unsigned int frame_skip,
                          bool mono_rotation)
 {
 
@@ -185,6 +186,7 @@ void trackingFrame2Frame(cv::Mat& projMatrl, cv::Mat& projMatrr,
       #endif
       if (!mono_rotation)
       {
+        //cv::multiply(rvec, cv::Mat::ones(3,1, CV_64FC1)*2, rvec);
         cv::Rodrigues(rvec, rotation);
       }
 
