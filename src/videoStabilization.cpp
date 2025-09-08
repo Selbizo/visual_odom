@@ -199,32 +199,25 @@ int main()
 
 	setlocale(LC_ALL, "RU");
 
-	vector <Point> textOrg(20);
-	vector <Point> textOrgCrop(20);
-	vector <Point> textOrgStab(20);
-	vector <Point> textOrgOrig(20);
+	const size_t textBoxesNum = 20;
+	vector <Point> textOrg(textBoxesNum), 
+					textOrgCrop(textBoxesNum), 
+					textOrgStab(textBoxesNum), 
+					textOrgOrig(textBoxesNum);
 	if (writeVideo)
 	{ 
-		for (int i = 0; i < 20; i++)
+		for (int i = 0; i < textBoxesNum; i++)
 		{
-			textOrg[i].x = 5 + a;
-			textOrg[i].y = 5 + 50* fontScale * (i + 1) + b;
-
-			textOrgCrop[i].x = 5;
-			textOrgCrop[i].y = 5 + 50 * fontScale *(i + 1) + b;
-
-			textOrgStab[i].x = 5;
-			textOrgStab[i].y = 5 + 50 * fontScale * (i + 1);
-
-			textOrgOrig[i].x = 5 + a;
-			textOrgOrig[i].y = 5 + 50 * fontScale * (i + 1);
+			textOrg[i] = {5 + a, 5 + 50* fontScale * (i + 1) + b};
+			textOrgCrop[i] = {5, 5 + 50 * fontScale *(i + 1) + b};
+			textOrgStab[i] = {5, 5 + 50 * fontScale * (i + 1)};
+			textOrgOrig[i] = {5 + a, 5 + 50 * fontScale * (i + 1)};
 		}
 	}
 	else {
-		for (int i = 0; i < 20; i++)
+		for (int i = 0; i < textBoxesNum; i++)
 		{
-			textOrg[i].x = 5;
-			textOrg[i].y = 5 + 30 * fontScale * (i + 1);
+			textOrg[i] = {5, 5 + 30 * fontScale * (i + 1)};
 		}
 	}
 

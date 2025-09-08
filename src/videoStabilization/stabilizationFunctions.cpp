@@ -79,6 +79,49 @@ void initFirstFrame(VideoCapture& capture, Mat& oldFrame, cuda::GpuMat& gOldFram
 	}
 }
 
+void initFirstFrame(cuda::GpuMat& gOldGray,
+	cuda::GpuMat& gP0, vector<Point2f>& p0,
+	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
+	double& kSwitch, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible)
+{
+	if (qualityLevel > 0.001 && harrisK > 0.001)
+	{
+		qualityLevel *= 0.6;
+		harrisK *= 0.6;
+	}
+	else
+	{
+		if (maxCorners > 50)
+		{
+			maxCorners *= 0.98;
+			d_features->setMaxCorners(maxCorners);
+		}
+	}
+	for (int i = 0; i < 1;i++)
+	{
+		transforms[i].dx *= kSwitch;
+		transforms[i].dy *= kSwitch;
+		transforms[i].da *= kSwitch;
+	}
+	cout << mask_device.empty() << endl;
+	cout << (mask_device.type() == CV_8UC1) << endl;
+	cout << (mask_device.size() == gOldGray.size()) << endl;
+	cout << (mask_device.size()) << endl;
+	cout << (gOldGray.size()) << endl;
+
+	d_features->detect(gOldGray, gP0, mask_device);
+
+	if ((gP0.cols > 20)) {
+
+		p0.clear();
+		gP0.download(p0);
+		stab_possible = true; //true
+	}
+	else {
+		stab_possible = false;
+	}
+}
+
 void initFirstFrameZero(Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gOldGray,
 	cuda::GpuMat& gOldCompressed, cuda::GpuMat& gP0, vector<Point2f>& p0,
 	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,

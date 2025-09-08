@@ -173,7 +173,7 @@ void trackingFrame2Frame(cv::Mat& projMatrl, cv::Mat& projMatrr,
       int flags =cv::SOLVEPNP_ITERATIVE;
 
       #if 1
-      cv::Mat inliers; 
+      cv::Mat inliers;
       cv::solvePnPRansac( points3D_t0, pointsLeft_t1, intrinsic_matrix, distCoeffs, rvec, translation,
                           useExtrinsicGuess, iterationsCount, reprojectionError, confidence,
                           inliers, flags );
