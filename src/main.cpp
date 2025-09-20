@@ -40,6 +40,13 @@ int main()
     #if USE_CUDA
         printf("CUDA is Enabled\n");
     #endif
+
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    Mat temp;
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
     // -----------------------------------------
     // Load images and calibration parameters
     // -----------------------------------------
@@ -110,16 +117,13 @@ int main()
     cv::Mat points4D, points3D;
     int init_frame_id = 0;
 
-
-
-
-
     //--------------------------------
     // Initialize variables VideoShake
     //--------------------------------
     Mat Shake(2, 3, CV_64F);
     TransformParam noiseIn = { 0.0, 0.0, 0.0 };
-                        vector <TransformParam> noiseOut(2);
+    vector <TransformParam> noiseOut(2);
+
 	for (int i = 0; i < noiseOut.size();i++)
 	{
 		noiseOut[i] = {0.0, 0.0, 0.0};
@@ -173,8 +177,9 @@ int main()
 	
 	double tauStab = 100.0;
 	double kSwitch = 0.01;
-	double framePart = 0.95;
-    
+	double framePart = 0.98;
+    fx = fx/framePart;
+    fy = fy/framePart;
 	const unsigned int firSize = 4;
     vector <TransformParam> transforms(firSize), movement(firSize), movementKalman(firSize);
 
@@ -363,15 +368,15 @@ int main()
 	Mat maskSearchLeft = Mat::zeros(cv::Size(b / compression , a / compression ), CV_8U);
 	Mat maskSearchRight = Mat::zeros(cv::Size(b / compression , a / compression ), CV_8U);
 	
-    cv::rectangle(maskSearchLeft, Rect(b * (1.0 - 0.9) / compression / 2, b * (1.0 - 0.9) / compression / 2, a * 0.9, b * 0.9 / compression ), 
+    cv::rectangle(maskSearchLeft, Rect(b * (1.0 - 0.5) / compression / 2, b * (1.0 - 0.5) / compression / 2, a * 0.5, b * 0.5 / compression ), 
 		Scalar(255), FILLED); // Прямоугольная маска
-    cv::rectangle(maskSearchRight, Rect(a * (1.0 - 0.9) / compression / 2, b * (1.0 - 0.9) / compression / 2, a * 0.9, b * 0.9 / compression ), 
+    cv::rectangle(maskSearchRight, Rect(a * (1.0 - 0.5) / compression / 2, b * (1.0 - 0.5) / compression / 2, a * 0.5, b * 0.5 / compression ), 
 		Scalar(255), FILLED); // Прямоугольная маска
     
-	cv::rectangle(maskSearchLeft, Rect(b * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
-		Scalar(0), FILLED);
-	cv::rectangle(maskSearchRight, Rect(a * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
-		Scalar(0), FILLED);
+	// cv::rectangle(maskSearchLeft, Rect(b * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
+	// 	Scalar(0), FILLED);
+	// cv::rectangle(maskSearchRight, Rect(a * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
+	// 	Scalar(0), FILLED);
     
 	cuda::GpuMat gMaskSearchLeft(maskSearchLeft);
     cuda::GpuMat gMaskSearchRight(maskSearchRight);
@@ -390,11 +395,11 @@ int main()
     cuda::GpuMat gMaskSearchSmallRoiLeft, gMaskSearchSmallRoiRight;
 
 	Mat roiMaskLeft = Mat::zeros(cv::Size(a / compression, b / compression), CV_8U);
-	cv::rectangle(roiMaskLeft, Rect(a * (1.0 - 0.8) / compression / 2, b * (1.0 - 0.8) / compression / 2, a * 0.8, b * 0.8 / compression),
+	cv::rectangle(roiMaskLeft, Rect(a * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
 		Scalar(255), FILLED); // Прямоугольная маска
 
 	Mat roiMaskRight = Mat::zeros(cv::Size(a / compression, b / compression), CV_8U);
-	cv::rectangle(roiMaskRight, Rect(a * (1.0 - 0.8) / compression / 2, b * (1.0 - 0.8) / compression / 2, a * 0.8, b * 0.8 / compression),
+	cv::rectangle(roiMaskRight, Rect(a * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
 		Scalar(255), FILLED); // Прямоугольная маска
 	//cuda::GpuMat gRoiMask(roiMask);
 
@@ -469,9 +474,9 @@ int main()
             loadImageRight(imageRight_t1_color, imageRight_t1, frame_id, filepath);      
         }
 
-        noiseIn.dx = (double)(rng.uniform(-20.0, 20.0));
-        noiseIn.dy = (double)(rng.uniform(-20.0, 20.0));
-        noiseIn.da = (double)(rng.uniform(-0.1, 0.1));
+        // noiseIn.dx = (double)(rng.uniform(-5.0, 5.0));
+        // noiseIn.dy = (double)(rng.uniform(-5.0, 5.0));
+        // noiseIn.da = (double)(rng.uniform(-0.01, 0.01));
 
         noiseOut[0] = iirNoise(noiseIn, X,Y);
 
@@ -479,6 +484,15 @@ int main()
         cv::warpAffine(imageLeft_t0, imageLeft_t0, Shake, imageLeft_t0.size());
         cv::warpAffine(imageRight_t0, imageRight_t0, Shake, imageRight_t0.size());
 
+        
+		imageLeft_t0 = imageLeft_t0(roi);
+		imageRight_t0 = imageRight_t0(roi);
+
+        
+        cv::resize(imageLeft_t0, imageLeft_t0, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
+        cv::resize(imageRight_t0, imageRight_t0, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
+
+        /*
         //video stab begins
         if (stabPossible)
         {
@@ -550,17 +564,11 @@ int main()
 				kSwitch = 1.0;
 
             gFrameLeft.upload(imageLeft_t0);
-
-			cuda::resize(gFrameLeft, gCompressedLeft, cv::Size(a / compression , b / compression ), 0.0, 0.0, cv::INTER_AREA); //лучший метод для понижения разрешения
-			cuda::cvtColor(gCompressedLeft, gGrayLeft, COLOR_BGR2GRAY);
-			cuda::bilateralFilter(gGrayLeft, gGrayLeft, 5, 5.0, 5.0);
-
+			cuda::resize(gFrameLeft,  gGrayLeft,  cv::Size(a / compression , b / compression ), 0.0, 0.0, cv::INTER_AREA); //лучший метод для понижения разрешения
+			
             gFrameRight.upload(imageRight_t0);
-
-			cuda::resize(gFrameRight, gCompressedRight, cv::Size(a / compression , b / compression ), 0.0, 0.0, cv::INTER_AREA); //лучший метод для понижения разрешения
-			cuda::cvtColor(gCompressedRight, gGrayRight, COLOR_BGR2GRAY);
-			cuda::bilateralFilter(gGrayRight, gGrayRight, 5, 5.0, 5.0);
-
+			cuda::resize(gFrameRight, gGrayRight, cv::Size(a / compression , b / compression ), 0.0, 0.0, cv::INTER_AREA); //лучший метод для понижения разрешения
+			
             if (gP1Left.cols > maxCorners * 4 / 5) //обновление критериев поиска точек
 			{
 				maxCorners *= 1.02;
@@ -568,9 +576,11 @@ int main()
 				d_features->setMaxCorners(maxCorners);
 			}
 
-
+            d_pyrLK_sparse->calc(useGray ? gOldGrayLeft : gOldFrameLeft, useGray ? gGrayLeft : gFrameLeft, gP0Left, gP1Left, gStatusLeft);
+            gP1Left.download(p1Left);
             downloadBasicFunc(gStatusLeft, statusLeft);
-			getBiasAndRotation(p0Left, p1Left, dLeft, meanP0Left, transforms, TLeft, compression); //уже можно делать Винеровскую фильтрацию
+			
+            getBiasAndRotation(p0Left, p1Left, dLeft, meanP0Left, transforms, TLeft, compression); //уже можно делать Винеровскую фильтрацию
 			iirAdaptiveHighPass(transforms, tauStab, roi, a, b, c, kSwitch, movement, movementKalman);
 			
 			kf.update((cv::Mat_<double>(3, 1) << transforms[1].dx, transforms[1].dy, transforms[1].da));
@@ -592,7 +602,7 @@ int main()
 			transforms[0].getTransform(TStabLeft, a, b, c, atan_ba, framePart); // получение текущего компенсирующего преобразования
 			transforms[0].getTransformInvert(TStabInvLeft, a, b, c, atan_ba, framePart); // получение текущего обратного компенсирующего преобразования для отрисовки маски
 
-			cuda::warpAffine(gFrameLeft, gFrameStabilizedLeft, TStabLeft, cv::Size(a, b)); //8ms
+			cuda::warpAffine(gFrameLeft,  gFrameStabilizedLeft,  TStabLeft, cv::Size(a, b)); //8ms
 			cuda::warpAffine(gFrameRight, gFrameStabilizedRight, TStabLeft, cv::Size(a, b)); //8ms
 
 			gFrameStabilizatedCropLeft = gFrameStabilizedLeft(roi);
@@ -618,11 +628,11 @@ int main()
                 //gOldGray.release();
                 
                 // capture >> frame;
+                // cv::imshow("imageLeft_t0", imageLeft_t0); //ok
                 gFrameLeft.upload(imageLeft_t0);
-                cuda::resize(gFrameLeft, gCompressedLeft, cv::Size(a / compression , b / compression ), 0.0, 0.0, cv::INTER_AREA); //лучший метод для понижения разрешения
+                cuda::resize(gFrameLeft, gGrayLeft, cv::Size(a / compression , b / compression ), 0.0, 0.0, cv::INTER_AREA); //лучший метод для понижения разрешения
 
-                //cuda::cvtColor(gCompressedLeft, gGrayLeft, COLOR_BGR2GRAY); //it is already gray
-                cuda::bilateralFilter(gCompressedLeft, gGrayLeft, 5, 5.0, 5.0);
+                //cuda::bilateralFilter(gCompressedLeft, gGrayLeft, 3, 1.0, 1.0);
 
                 frameCnt++;
                 if (frameCnt % 10 == 1)
@@ -635,18 +645,22 @@ int main()
                     stabPossible = false;
 
                 if (stabPossible) {
-                    d_pyrLK_sparse->calc(gOldGrayLeft, gCompressedLeft, gP0Left, gP1Left, gStatusLeft, gErrLeft);
+                    d_pyrLK_sparse->calc(gOldGrayLeft, gGrayLeft, gP0Left, gP1Left, gStatusLeft, gErrLeft);
                     gP1Left.download(p1Left);
                     gErrLeft.download(errLeft);
+                    downloadBasicFunc(gStatusLeft, statusLeft);
                 }
             }
             else if (stabPossible) {
                 d_pyrLK_sparse->calc(useGray ? gOldGrayLeft : gOldFrameLeft, useGray ? gGrayLeft : gFrameLeft, gP0Left, gP1Left, gStatusLeft);
                 gP1Left.download(p1Left);
+                downloadBasicFunc(gStatusLeft, statusLeft);
             }
-
+            //gGrayLeft.copyTo(gOldGrayLeft);
+            gOldGrayLeft = gGrayLeft;
         }
         //video stab ends
+        */
 
 
         t_a = clock();

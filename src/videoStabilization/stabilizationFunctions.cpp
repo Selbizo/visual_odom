@@ -43,7 +43,7 @@ void initFirstFrame(VideoCapture& capture, Mat& oldFrame, cuda::GpuMat& gOldFram
 	gOldCompressed.release();
 	cuda::resize(gOldFrame, gOldCompressed, Size(a / compression, b / compression), 0.0, 0.0, cv::INTER_LINEAR);
 	cuda::cvtColor(gOldCompressed, gOldGray, COLOR_BGR2GRAY);
-	cuda::bilateralFilter(gOldGray, gOldGray, 3, 3.0, 1.0); //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	//cuda::bilateralFilter(gOldGray, gOldGray, 3, 3.0, 1.0); //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	//cuda::resize(gOldGray, gOldGray, Size(gOldGray.cols / frame compression , gOldGray.rows / frame compression ), 0.0, 0.0, cv::INTER_AREA);
 
 	if (qualityLevel > 0.001 && harrisK > 0.001)
@@ -108,8 +108,11 @@ void initFirstFrame(cuda::GpuMat& gOldGray,
 	cout << (mask_device.size() == gOldGray.size()) << endl;
 	cout << (mask_device.size()) << endl;
 	cout << (gOldGray.size()) << endl;
-
-	d_features->detect(gOldGray, gP0, mask_device);
+	// Mat temp;
+	// gOldGray.download(temp);
+	// cv::imshow("image temp", temp);
+	d_features->detect(gOldGray, gP0);
+	// d_features->detect(gOldGray, gP0, mask_device);
 
 	if ((gP0.cols > 20)) {
 
