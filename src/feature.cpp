@@ -239,12 +239,17 @@ void bucketingFeatures(cv::Mat& image, FeatureSet& current_features, int bucket_
 
     // get features back from buckets
     current_features.clear();
-    for (int buckets_idx_height = 0; buckets_idx_height <= buckets_nums_height; buckets_idx_height++)
+    for (int buckets_idx_height = buckets_nums_height/3; buckets_idx_height <= buckets_nums_height*2/3; buckets_idx_height++)
     {
-      for (int buckets_idx_width = 0; buckets_idx_width <= buckets_nums_width; buckets_idx_width++)
+      for (int buckets_idx_width = buckets_nums_width/3; buckets_idx_width <= buckets_nums_width*2/3; buckets_idx_width++)
       {
-         buckets_idx = buckets_idx_height*buckets_nums_width + buckets_idx_width;
-         Buckets[buckets_idx].get_features(current_features);
+        if (!(buckets_idx_width > buckets_nums_width/2 && buckets_idx_width < buckets_nums_width*1/2 && 
+              buckets_idx_height > buckets_nums_height/2 && buckets_idx_height < buckets_nums_height*1/2))
+        {
+           buckets_idx = buckets_idx_height*buckets_nums_width + buckets_idx_width;
+           Buckets[buckets_idx].get_features(current_features);
+        }
+         
       }
     }
 

@@ -93,6 +93,11 @@ int main()
     float cy = fSettings["Camera.cy"];
     float bf = fSettings["Camera.bf"];
 
+    double framePart = 1.0;
+    fx = fx/framePart;
+    fy = fy/framePart;
+
+    bf = bf/framePart;
     cv::Mat projMatrl = (cv::Mat_<float>(3, 4) << fx, 0., cx, 0., 0., fy, cy, 0., 0,  0., 1., 0.);
     cv::Mat projMatrr = (cv::Mat_<float>(3, 4) << fx, 0., cx, bf, 0., fy, cy, 0., 0,  0., 1., 0.);
     cout << "P_left: " << endl << projMatrl << endl;
@@ -177,9 +182,8 @@ int main()
 	
 	double tauStab = 100.0;
 	double kSwitch = 0.01;
-	double framePart = 0.98;
-    fx = fx/framePart;
-    fy = fy/framePart;
+	//double framePart = 0.95;
+
 	const unsigned int firSize = 4;
     vector <TransformParam> transforms(firSize), movement(firSize), movementKalman(firSize);
 
@@ -489,8 +493,8 @@ int main()
 		imageRight_t0 = imageRight_t0(roi);
 
         
-        cv::resize(imageLeft_t0, imageLeft_t0, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
-        cv::resize(imageRight_t0, imageRight_t0, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
+        cv::resize(imageLeft_t0, imageLeft_t0, cv::Size(a, b), 0.0, 0.0, cv::INTER_CUBIC);
+        cv::resize(imageRight_t0, imageRight_t0, cv::Size(a, b), 0.0, 0.0, cv::INTER_CUBIC);
 
         /*
         //video stab begins
@@ -728,7 +732,7 @@ int main()
             std::cout << "Too large rotation"  << std::endl;
         }
         t_b = clock();
-        float frame_time = 1000*(double)(t_b-t_a)/CLOCKS_PER_SEC*2;
+        float frame_time = 1000*(double)(t_b-t_a)/CLOCKS_PER_SEC;
         float fps = 1000/frame_time;
         //cout << "[Info] frame times (ms): " << frame_time << endl;
         //cout << "[Info] FPS: " << fps << endl;
