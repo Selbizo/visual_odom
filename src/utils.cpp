@@ -78,11 +78,11 @@ void integrateOdometryStereo(int frame_i, cv::Mat& rigid_body_transformation, cv
                         + (translation_stereo.at<double>(2))*(translation_stereo.at<double>(2))) ;
 
     // frame_pose = frame_pose * rigid_body_transformation;
-    std::cout << "scale: " << scale << std::endl;
+    // std::cout << "scale: " << scale << std::endl;
 
     rigid_body_transformation = rigid_body_transformation.inv();
     // if ((scale>0.1)&&(translation_stereo.at<double>(2) > translation_stereo.at<double>(0)) && (translation_stereo.at<double>(2) > translation_stereo.at<double>(1))) 
-    if (scale > 0.05 && scale < 10) 
+    if (scale > 0.1 && scale < 40) 
     {
       // std::cout << "Rpose" << Rpose << std::endl;
 

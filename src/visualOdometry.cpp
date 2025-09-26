@@ -92,7 +92,7 @@ void matchingFeatures(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
     std::vector<cv::Point2f>  pointsLeftReturn_t0;   // feature points to check cicular mathcing validation
 
 
-    if (currentVOFeatures.size() < 2000)
+    if (currentVOFeatures.size() < 1000)
     {
 
         // append new features with old features
@@ -103,7 +103,7 @@ void matchingFeatures(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
     // --------------------------------------------------------
     // Feature tracking using KLT tracker, bucketing and circular matching
     // --------------------------------------------------------
-    int bucket_size = imageLeft_t0.rows/50;
+    int bucket_size = imageLeft_t0.rows/20;
     int features_per_bucket = 1;
     bucketingFeatures(imageLeft_t0, currentVOFeatures, bucket_size, features_per_bucket);
 
@@ -190,7 +190,7 @@ void trackingFrame2Frame(cv::Mat& projMatrl, cv::Mat& projMatrr,
         cv::Rodrigues(rvec, rotation);
       }
 
-      std::cout << "[trackingFrame2Frame] inliers size: " << inliers.size() << std::endl;
+    //   std::cout << "[trackingFrame2Frame] inliers size: " << inliers.size() << std::endl;
 
 }
 

@@ -449,7 +449,7 @@ int main()
     // -----------------------------------------
     std::vector<FeaturePoint> oldFeaturePointsLeft;
     std::vector<FeaturePoint> currentFeaturePointsLeft;
-
+    double MaxShake = 20.0;
     for (int frame_id = init_frame_id+1; frame_id < 4800000; frame_id+=frame_skip)
     {
         cv::Mat imageRight_t1,  imageLeft_t1;
@@ -478,9 +478,9 @@ int main()
             loadImageRight(imageRight_t1_color, imageRight_t1, frame_id, filepath);      
         }
 
-        // noiseIn.dx = (double)(rng.uniform(-5.0, 5.0));
-        // noiseIn.dy = (double)(rng.uniform(-5.0, 5.0));
-        // noiseIn.da = (double)(rng.uniform(-0.01, 0.01));
+        noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake));
+        noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake));
+        noiseIn.da = (double)(rng.uniform(-MaxShake/100, MaxShake/100));
 
         noiseOut[0] = iirNoise(noiseIn, X,Y);
 
@@ -747,10 +747,20 @@ int main()
         display(frame_id, trajectory, trajectory_biased, xyz, pose_matrix_gt, fps, display_ground_truth);
 
         int key = cv::waitKey(3);
-        if (key == 27)
+        if (key == 'w')
+            {
+                MaxShake *= 1.1;
+                cout << "MaxShake = " << MaxShake << endl;
+            }
+        else if (key == 's')
+            {
+                MaxShake /= 1.1;
+                cout << "MaxShake = " << MaxShake << endl;
+            }
+        else if (key == 27)
             break;
     }
-
+    //getchar();
     return 0;
 }
 

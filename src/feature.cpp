@@ -56,8 +56,8 @@ void featureDetectionGoodFeaturesToTrack(cv::Mat image, std::vector<cv::Point2f>
   int blockSize = 3;
   bool useHarrisDetector = false;
   double k = 0.04;
-  cv::Mat mask;
-
+  cv::Mat mask = cv::Mat::zeros(cv::Size(image.cols, image.rows), CV_8U);
+	cv::rectangle(mask, cv::Rect(image.cols * (1.0 - 0.4) / 2, image.rows * (1.0 - 0.4) / 2, image.cols * 0.4, image.rows * 0.4),	cv::Scalar(255), cv::FILLED); // Прямоугольная маска
   cv::goodFeaturesToTrack( image, points, maxCorners, qualityLevel, minDistance, mask, blockSize, useHarrisDetector, k );
 }
 
@@ -138,7 +138,7 @@ void circularMatching(cv::Mat img_l_0, cv::Mat img_r_0, cv::Mat img_l_1, cv::Mat
   calcOpticalFlowPyrLK(img_r_1, img_l_1, points_r_1, points_l_1, status2, err, winSize, 3, termcrit, 0, 0.001);
   calcOpticalFlowPyrLK(img_l_1, img_l_0, points_l_1, points_l_0_return, status3, err, winSize, 3, termcrit, 0, 0.001);
   clock_t toc = clock();
-  std::cerr << "calcOpticalFlowPyrLK time: " << float(toc - tic)/CLOCKS_PER_SEC*1000 << "ms" << std::endl;
+  // std::cerr << "calcOpticalFlowPyrLK time: " << float(toc - tic)/CLOCKS_PER_SEC*1000 << "ms" << std::endl;
 
 
   deleteUnmatchFeaturesCircle(points_l_0, points_r_0, points_r_1, points_l_1, points_l_0_return,
@@ -196,7 +196,7 @@ void circularMatching_gpu(cv::Mat img_l_0, cv::Mat img_r_0, cv::Mat img_l_1, cv:
   download(points_l_0_ret_gpu, points_l_0_return);
   
   clock_t toc_gpu = clock();
-  std::cerr << "calcOpticalFlowPyrLK(CUDA)  time: " << float(toc_gpu - tic_gpu)/CLOCKS_PER_SEC*1000 << "ms" << std::endl;
+  // std::cerr << "calcOpticalFlowPyrLK(CUDA)  time: " << float(toc_gpu - tic_gpu)/CLOCKS_PER_SEC*1000 << "ms" << std::endl;
 
   deleteUnmatchFeaturesCircle(points_l_0, points_r_0, points_r_1, points_l_1, points_l_0_return,
                         status0, status1, status2, status3, current_features.ages);
@@ -239,28 +239,39 @@ void bucketingFeatures(cv::Mat& image, FeatureSet& current_features, int bucket_
 
     // get features back from buckets
     current_features.clear();
-    for (int buckets_idx_height = buckets_nums_height/3; buckets_idx_height <= buckets_nums_height*2/3; buckets_idx_height++)
-    {
-      for (int buckets_idx_width = buckets_nums_width/3; buckets_idx_width <= buckets_nums_width*2/3; buckets_idx_width++)
-      {
-        if (!(buckets_idx_width > buckets_nums_width/2 && buckets_idx_width < buckets_nums_width*1/2 && 
-              buckets_idx_height > buckets_nums_height/2 && buckets_idx_height < buckets_nums_height*1/2))
-        {
-           buckets_idx = buckets_idx_height*buckets_nums_width + buckets_idx_width;
-           Buckets[buckets_idx].get_features(current_features);
-        }
+    // for (int buckets_idx_height = buckets_nums_height/3; buckets_idx_height <= buckets_nums_height*2/3; buckets_idx_height++)
+    // {
+    //   for (int buckets_idx_width = buckets_nums_width/3; buckets_idx_width <= buckets_nums_width*2/3; buckets_idx_width++)
+    //   {
+    //     if (!(buckets_idx_width > buckets_nums_width/2 && buckets_idx_width < buckets_nums_width*1/2 && 
+    //           buckets_idx_height > buckets_nums_height/2 && buckets_idx_height < buckets_nums_height*1/2))
+    //     {
+    //        buckets_idx = buckets_idx_height*buckets_nums_width + buckets_idx_width;
+    //        Buckets[buckets_idx].get_features(current_features);
+    //     }
          
+    //   }
+    // }
+
+
+    for (int buckets_idx_height = 0; buckets_idx_height <= buckets_nums_height; buckets_idx_height++)
+    {
+      for (int buckets_idx_width = 0; buckets_idx_width <= buckets_nums_width; buckets_idx_width++)
+      {
+           buckets_idx = buckets_idx_height*buckets_nums_width + buckets_idx_width;
+           Buckets[buckets_idx].get_features(current_features);    
       }
     }
 
-    std::cout << "current features number after bucketing: " << current_features.size() << std::endl;
+    // std::cout << "current features number after bucketing: " << current_features.size() << std::endl;
 
 }
 
 void appendNewFeatures(cv::Mat& image, FeatureSet& current_features)
 {
     std::vector<cv::Point2f>  points_new;
-    featureDetectionFast(image, points_new);
+    // featureDetectionFast(image, points_new);
+    featureDetectionGoodFeaturesToTrack(image, points_new);
     current_features.points.insert(current_features.points.end(), points_new.begin(), points_new.end());
     std::vector<int>  ages_new(points_new.size(), 0);
     current_features.ages.insert(current_features.ages.end(), ages_new.begin(), ages_new.end());
