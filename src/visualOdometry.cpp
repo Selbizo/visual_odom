@@ -1,5 +1,6 @@
 #include "visualOdometry.h"
 using namespace cv;
+using namespace std;
 
 cv::Mat euler2rot(cv::Mat& rotationMatrix, const cv::Mat & euler)
 {
@@ -103,7 +104,7 @@ void matchingFeatures(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
     // --------------------------------------------------------
     // Feature tracking using KLT tracker, bucketing and circular matching
     // --------------------------------------------------------
-    int bucket_size = imageLeft_t0.rows/20;
+    int bucket_size = imageLeft_t0.rows/50;
     int features_per_bucket = 1;
     bucketingFeatures(imageLeft_t0, currentVOFeatures, bucket_size, features_per_bucket);
 
@@ -209,7 +210,7 @@ void displayTracking(cv::Mat& imageLeft_t1,
 
       for (int i = 0; i < pointsLeft_t0.size(); i++)
       {
-          cv::circle(vis, cv::Point(pointsLeft_t0[i].x, pointsLeft_t0[i].y), radius, CV_RGB(0,255,0));
+          cv::circle(vis, cv::Point(pointsLeft_t0[i].x, pointsLeft_t0[i].y), radius, CV_RGB(0,0,255));
       }
 
       for (int i = 0; i < pointsLeft_t1.size(); i++)
@@ -219,7 +220,7 @@ void displayTracking(cv::Mat& imageLeft_t1,
 
       for (int i = 0; i < pointsLeft_t1.size(); i++)
       {
-          cv::line(vis, pointsLeft_t0[i], pointsLeft_t1[i], CV_RGB(0,255,0));
+          cv::line(vis, pointsLeft_t0[i], pointsLeft_t1[i], CV_RGB(255,0,0));
       }
     //   cv::waitKey(200);
       cv::imshow("vis ", vis );  

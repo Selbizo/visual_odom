@@ -450,6 +450,17 @@ int main()
     std::vector<FeaturePoint> oldFeaturePointsLeft;
     std::vector<FeaturePoint> currentFeaturePointsLeft;
     double MaxShake = 20.0;
+
+    // Добавляем переменные для интерполяции
+    bool use_interpolation = false;
+    cv::Mat last_valid_rotation = cv::Mat::eye(3, 3, CV_64F);
+    cv::Mat last_valid_translation = cv::Mat::zeros(3, 1, CV_64F);
+    cv::Mat interpolated_rotation = cv::Mat::eye(3, 3, CV_64F);
+    cv::Mat interpolated_translation = cv::Mat::zeros(3, 1, CV_64F);
+    int interpolation_frames = 0;
+    const int max_interpolation_frames = 100; // Максимальное количество кадров для интерполяции
+
+
     for (int frame_id = init_frame_id+1; frame_id < 4800000; frame_id+=frame_skip)
     {
         cv::Mat imageRight_t1,  imageLeft_t1;
@@ -682,11 +693,53 @@ int main()
         imageLeft_t0 = imageLeft_t1;
         imageRight_t0 = imageRight_t1;
 
+        // Проверяем количество найденных точек
+    if (pointsLeft_t0.size() < 15 || pointsLeft_t1.size() < 15) {
+        if (!use_interpolation && pointsLeft_t0.size() >= 8) {
+            // Сохраняем последние валидные параметры движения перед началом интерполяции
+            last_valid_rotation = rotation.clone();
+            last_valid_translation = translation.clone();
+            use_interpolation = true;
+            interpolation_frames = 0;
+        }
+        
+        if (use_interpolation) {
+            // Используем линейную интерполяцию
+            if (interpolation_frames < max_interpolation_frames) {
+                double alpha = (double)(interpolation_frames + 1) / (max_interpolation_frames + 1);
+                interpolated_rotation = last_valid_rotation * (1.0 - alpha) + rotation * alpha;
+                interpolated_translation = last_valid_translation * (1.0 - alpha) + translation * alpha;
+                
+                // Используем интерполированные значения
+                rotation = interpolated_rotation.clone();
+                translation = interpolated_translation.clone();
+                interpolation_frames++;
+                
+                std::cout << "[Info] Using interpolation, frames: " << interpolation_frames 
+                          << ", points found: " << pointsLeft_t0.size() << std::endl;
+            } else {
+                // Сбрасываем интерполяцию если слишком долго не находим точки
+                use_interpolation = false;
+                std::cout << "[Warning] Interpolation timeout, resetting..." << std::endl;
+            }
+        } else {
+            // Пропускаем кадр если точек слишком мало и интерполяция не активна
+            std::cout << "[Warning] Too few points (" << pointsLeft_t0.size() 
+                      << "), skipping frame..." << std::endl;
+            continue;
+        }
+    } else {
+        // Достаточно точек - нормальная обработка
+        if (use_interpolation) {
+            use_interpolation = false;
+            std::cout << "[Info] Enough points found, stopping interpolation" << std::endl;
+        }
+        
         std::vector<cv::Point2f>& currentPointsLeft_t0 = pointsLeft_t0;
         std::vector<cv::Point2f>& currentPointsLeft_t1 = pointsLeft_t1;
         
         std::vector<cv::Point2f> newPoints;
-        std::vector<bool> valid; // valid new points are ture
+        std::vector<bool> valid;
 
         // ---------------------
         // Triangulate 3D Points
@@ -695,56 +748,42 @@ int main()
         cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t0,  pointsRight_t0,  points4D_t0);
         cv::convertPointsFromHomogeneous(points4D_t0.t(), points3D_t0);
 
-/*        cv::Mat points3D_t1, points4D_t1;
-        cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t1,  pointsRight_t1,  points4D_t1);
-        cv::convertPointsFromHomogeneous(points4D_t1.t(), points3D_t1);*/
-
         // ---------------------
-        // Tracking transfomation
+        // Tracking transformation
         // ---------------------
-	clock_t tic_gpu = clock();
-        trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0, pointsLeft_t1, points3D_t0, rotation, translation, frame_skip, false);
-	clock_t toc_gpu = clock();
-	// std::cerr << "tracking frame 2 frame: " << float(toc_gpu - tic_gpu)/CLOCKS_PER_SEC*1000 << "ms" << std::endl;
-        displayTracking(imageLeft_t1, pointsLeft_t0, pointsLeft_t1);
+        clock_t tic_gpu = clock();
+        trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0, pointsLeft_t1, 
+                           points3D_t0, rotation, translation, frame_skip, false);
+        clock_t toc_gpu = clock();
+        
+        // Сохраняем валидные параметры движения
+        last_valid_rotation = rotation.clone();
+        last_valid_translation = translation.clone();
+    }
 
+    displayTracking(imageLeft_t1, pointsLeft_t0, pointsLeft_t1);
 
-/*        points4D = points4D_t0;
-        frame_pose.convertTo(frame_pose32, CV_32F);
-        points4D = frame_pose32 * points4D;
-        cv::convertPointsFromHomogeneous(points4D.t(), points3D);*/
+    // ------------------------------------------------
+    // Integrating and display
+    // ------------------------------------------------
+    cv::Vec3f rotation_euler = rotationMatrixToEulerAngles(rotation);
 
-        // ------------------------------------------------
-        // Intergrating and display
-        // ------------------------------------------------
+    cv::Mat rigid_body_transformation;
 
-        cv::Vec3f rotation_euler = rotationMatrixToEulerAngles(rotation);
+    if(abs(rotation_euler[1])<0.1*MaxShake && abs(rotation_euler[0])<0.1*MaxShake && abs(rotation_euler[2])<0.1*MaxShake)
+    {
+        integrateOdometryStereo(frame_id, rigid_body_transformation, frame_pose, 
+                               rotation, translation);
+    } else {
+        std::cout << "Too large rotation" << std::endl;
+    }
+    
+    t_b = clock();
+    float frame_time = 1000*(double)(t_b-t_a)/CLOCKS_PER_SEC;
+    float fps = 1000/frame_time;
 
-
-        cv::Mat rigid_body_transformation;
-
-        if(abs(rotation_euler[1])<0.1 && abs(rotation_euler[0])<0.1 && abs(rotation_euler[2])<0.1)
-        {
-            integrateOdometryStereo(frame_id, rigid_body_transformation, frame_pose, rotation, translation);
-
-        } else {
-
-            std::cout << "Too large rotation"  << std::endl;
-        }
-        t_b = clock();
-        float frame_time = 1000*(double)(t_b-t_a)/CLOCKS_PER_SEC;
-        float fps = 1000/frame_time;
-        //cout << "[Info] frame times (ms): " << frame_time << endl;
-        //cout << "[Info] FPS: " << fps << endl;
-
-        // std::cout << "rigid_body_transformation" << rigid_body_transformation << std::endl;
-        // std::cout << "rotation: " << rotation_euler << std::endl;
-        // std::cout << "translation: " << translation.t() << std::endl;
-        // std::cout << "frame_pose" << frame_pose << std::endl;
-
-
-        cv::Mat xyz = frame_pose.col(3).clone();
-        display(frame_id, trajectory, trajectory_biased, xyz, pose_matrix_gt, fps, display_ground_truth);
+    cv::Mat xyz = frame_pose.col(3).clone();
+    display(frame_id, trajectory, trajectory_biased, xyz, pose_matrix_gt, fps, display_ground_truth);
 
         int key = cv::waitKey(3);
         if (key == 'w')
