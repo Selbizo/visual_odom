@@ -239,33 +239,30 @@ void bucketingFeatures(cv::Mat& image, FeatureSet& current_features, int bucket_
 
     // get features back from buckets
     current_features.clear();
-    // int nn = 8;
-    // for (int buckets_idx_height = buckets_nums_height/nn; buckets_idx_height <= buckets_nums_height*(nn-1)/nn; buckets_idx_height++)
-    // {
-    //   for (int buckets_idx_width = buckets_nums_width/nn; buckets_idx_width <= buckets_nums_width*(nn-1)/nn; buckets_idx_width++)
-    //   {
-    //     if (!(buckets_idx_width > buckets_nums_width/nn && buckets_idx_width < buckets_nums_width*(nn-1)/nn && 
-    //           buckets_idx_height > buckets_nums_height/nn && buckets_idx_height < buckets_nums_height*(nn-1)/nn))
-    //     {
-    //        buckets_idx = buckets_idx_height*buckets_nums_width + buckets_idx_width;
-    //        Buckets[buckets_idx].get_features(current_features);
-    //     }
-         
-    //   }
-    // }
-
-
-    for (int buckets_idx_height = 0; buckets_idx_height <= buckets_nums_height; buckets_idx_height++)
+    int nn = 4;
+    for (int buckets_idx_height = buckets_nums_height/nn; buckets_idx_height <= buckets_nums_height*(nn-1)/nn; buckets_idx_height++)
     {
-      for (int buckets_idx_width = 0; buckets_idx_width <= buckets_nums_width; buckets_idx_width++)
+      for (int buckets_idx_width = buckets_nums_width/nn; buckets_idx_width <= buckets_nums_width*(nn-1)/nn; buckets_idx_width++)
       {
+        // if (!(buckets_idx_width > buckets_nums_width/nn && buckets_idx_width < buckets_nums_width*(nn-1)/nn && 
+        //       buckets_idx_height > buckets_nums_height/nn && buckets_idx_height < buckets_nums_height*(nn-1)/nn))
+        {
            buckets_idx = buckets_idx_height*buckets_nums_width + buckets_idx_width;
-           Buckets[buckets_idx].get_features(current_features);    
+           Buckets[buckets_idx].get_features(current_features);
+        } 
       }
     }
 
-    // std::cout << "current features number after bucketing: " << current_features.size() << std::endl;
+    // for (int buckets_idx_height = 0; buckets_idx_height <= buckets_nums_height; buckets_idx_height++)
+    // {
+    //   for (int buckets_idx_width = 0; buckets_idx_width <= buckets_nums_width; buckets_idx_width++)
+    //   {
+    //        buckets_idx = buckets_idx_height*buckets_nums_width + buckets_idx_width;
+    //        Buckets[buckets_idx].get_features(current_features);    
+    //   }
+    // }
 
+    // std::cout << "current features number after bucketing: " << current_features.size() << std::endl;
 }
 
 void appendNewFeatures(cv::Mat& image, FeatureSet& current_features)

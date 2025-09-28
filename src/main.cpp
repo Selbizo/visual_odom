@@ -449,7 +449,7 @@ int main()
     // -----------------------------------------
     std::vector<FeaturePoint> oldFeaturePointsLeft;
     std::vector<FeaturePoint> currentFeaturePointsLeft;
-    double MaxShake = 20.0;
+    double MaxShake = 2.0;
 
     // Добавляем переменные для интерполяции
     bool use_interpolation = false;
@@ -694,8 +694,8 @@ int main()
         imageRight_t0 = imageRight_t1;
 
         // Проверяем количество найденных точек
-    if (pointsLeft_t0.size() < 15 || pointsLeft_t1.size() < 15) {
-        if (!use_interpolation && pointsLeft_t0.size() >= 8) {
+    if (pointsLeft_t0.size() < 30 || pointsLeft_t1.size() < 30) {
+        if (!use_interpolation && pointsLeft_t0.size() >= 15) {
             // Сохраняем последние валидные параметры движения перед началом интерполяции
             last_valid_rotation = rotation.clone();
             last_valid_translation = translation.clone();
@@ -770,7 +770,7 @@ int main()
 
     cv::Mat rigid_body_transformation;
 
-    if(abs(rotation_euler[1])<0.1*MaxShake && abs(rotation_euler[0])<0.1*MaxShake && abs(rotation_euler[2])<0.1*MaxShake)
+    if(abs(rotation_euler[1])<0.4*MaxShake*frame_skip && abs(rotation_euler[0])<0.1*MaxShake*frame_skip && abs(rotation_euler[2])<0.1*MaxShake*frame_skip)
     {
         integrateOdometryStereo(frame_id, rigid_body_transformation, frame_pose, 
                                rotation, translation);
@@ -788,13 +788,17 @@ int main()
         int key = cv::waitKey(3);
         if (key == 'w')
             {
-                MaxShake *= 1.1;
-                cout << "MaxShake = " << MaxShake << endl;
+                //MaxShake *= 1.1;
+                //cout << "MaxShake = " << MaxShake << endl;
+                frame_skip++;
+                cout << "frame_skip = " << frame_skip << endl;
             }
-        else if (key == 's')
+        else if (key == 's' && frame_skip > 1)
             {
-                MaxShake /= 1.1;
-                cout << "MaxShake = " << MaxShake << endl;
+                //MaxShake /= 1.1;
+                //cout << "MaxShake = " << MaxShake << endl;
+                frame_skip--;
+                cout << "frame_skip = " << frame_skip << endl;
             }
         else if (key == 27)
             break;
