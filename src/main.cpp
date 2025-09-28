@@ -116,11 +116,11 @@ int main()
     cv::Mat frame_pose32 = cv::Mat::eye(4, 4, CV_32F);
 
     std::cout << "frame_pose " << frame_pose << std::endl;
-    cv::Mat trajectory = cv::Mat::zeros(1400, 1400, CV_8UC3);
-    cv::Mat trajectory_biased = cv::Mat::zeros(900, 900, CV_8UC3);
+    cv::Mat trajectory = cv::Mat::zeros(4000, 4000, CV_8UC3);
+    cv::Mat trajectory_biased = cv::Mat::zeros(500, 500, CV_8UC3);
     FeatureSet currentVOFeatures;
     cv::Mat points4D, points3D;
-    int init_frame_id = 0;
+    int init_frame_id = 100;
 
     //--------------------------------
     // Initialize variables VideoShake
@@ -461,14 +461,14 @@ int main()
     const int max_interpolation_frames = 100; // Максимальное количество кадров для интерполяции
 
 
-    for (int frame_id = init_frame_id+1; frame_id < 4800000; frame_id+=frame_skip)
+    for (int frame_id = init_frame_id+1; frame_id < 4800; frame_id+=frame_skip)
     {
         cv::Mat imageRight_t1,  imageLeft_t1;
         if(use_intel_rgbd)
         {
             pCamera->getLRFrames(imageLeft_t1,imageRight_t1);
         }
-            else if (use_camera &&! use_intel_rgbd)
+        else if (use_camera &&! use_intel_rgbd)
         {
             cv::Mat imageLeft_t1_color;
             cv::Mat imageRight_t1_color;  

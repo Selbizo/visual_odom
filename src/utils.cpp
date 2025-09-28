@@ -21,7 +21,7 @@ void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::
     // draw estimated trajectory 
     int x = trajectory.cols/2 + int(pose.at<double>(0));
     int y = trajectory.rows/2 - int(pose.at<double>(2));
-    circle(trajectory, cv::Point(x, y) ,1, CV_RGB(30,180,230), 2);
+    circle(trajectory, cv::Point(x, y) ,1, CV_RGB(230,180,30), 1);
 
     if (show_gt)
     {
@@ -42,8 +42,8 @@ void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::
     // putText(traj, text, textOrg, fontFace, fontScale, Scalar::all(255), thickness, 8);
 
     cv::Mat Bias = (cv::Mat_<double>(2, 3) <<
-    1, 0, -pose.at<double>(0) - 200, 
-    0, 1, pose.at<double>(2) - 200
+    1, 0, -pose.at<double>(0) - (trajectory.cols - trajectory_biased.cols)/2, 
+    0, 1, pose.at<double>(2) - (trajectory.rows - trajectory_biased.rows)/2
     );
     //cv::Mat trajectory_biased;
     cv::warpAffine(trajectory, trajectory_biased, Bias, trajectory_biased.size());
@@ -82,7 +82,7 @@ void integrateOdometryStereo(int frame_i, cv::Mat& rigid_body_transformation, cv
 
     rigid_body_transformation = rigid_body_transformation.inv();
     // if ((scale>0.1)&&(translation_stereo.at<double>(2) > translation_stereo.at<double>(0)) && (translation_stereo.at<double>(2) > translation_stereo.at<double>(1))) 
-    if (scale > 0.1 && scale < 40) 
+    if (scale > 0.02 && scale < 40) 
     {
       // std::cout << "Rpose" << Rpose << std::endl;
 

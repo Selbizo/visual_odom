@@ -104,8 +104,8 @@ void matchingFeatures(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
     // --------------------------------------------------------
     // Feature tracking using KLT tracker, bucketing and circular matching
     // --------------------------------------------------------
-    int bucket_size = imageLeft_t0.rows/60;
-    int features_per_bucket = 1;
+    int bucket_size = imageLeft_t0.rows/20;
+    int features_per_bucket = 4;
     bucketingFeatures(imageLeft_t0, currentVOFeatures, bucket_size, features_per_bucket);
 
     pointsLeft_t0 = currentVOFeatures.points;
@@ -210,17 +210,17 @@ void displayTracking(cv::Mat& imageLeft_t1,
 
       for (int i = 0; i < pointsLeft_t0.size(); i++)
       {
-          cv::circle(vis, cv::Point(pointsLeft_t0[i].x, pointsLeft_t0[i].y), radius, CV_RGB(0,0,255));
+          cv::circle(vis, cv::Point(pointsLeft_t0[i].x, pointsLeft_t0[i].y), radius, CV_RGB(255, 0, 0));
       }
 
       for (int i = 0; i < pointsLeft_t1.size(); i++)
       {
-          cv::circle(vis, cv::Point(pointsLeft_t1[i].x, pointsLeft_t1[i].y), radius, CV_RGB(255,0,0));
+          cv::circle(vis, cv::Point(pointsLeft_t1[i].x, pointsLeft_t1[i].y), radius, CV_RGB(255, 0, 0));
       }
 
       for (int i = 0; i < pointsLeft_t1.size(); i++)
       {
-          cv::line(vis, pointsLeft_t0[i], pointsLeft_t1[i], CV_RGB(255,0,0));
+          cv::line(vis, pointsLeft_t0[i], pointsLeft_t1[i], CV_RGB(30, 150, 30));
       }
     //   cv::waitKey(200);
       cv::imshow("vis ", vis );  
