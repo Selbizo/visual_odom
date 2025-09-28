@@ -449,7 +449,7 @@ int main()
     // -----------------------------------------
     std::vector<FeaturePoint> oldFeaturePointsLeft;
     std::vector<FeaturePoint> currentFeaturePointsLeft;
-    double MaxShake = 2.0;
+    double MaxShake = 15.0;
 
     // Добавляем переменные для интерполяции
     bool use_interpolation = false;
@@ -491,7 +491,7 @@ int main()
 
         noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake));
         noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake));
-        noiseIn.da = (double)(rng.uniform(-MaxShake/100, MaxShake/100));
+        noiseIn.da = (double)(rng.uniform(-sqrt(MaxShake)/100, sqrt(MaxShake)/100));
 
         noiseOut[0] = iirNoise(noiseIn, X,Y);
 
@@ -507,7 +507,7 @@ int main()
         cv::resize(imageLeft_t0, imageLeft_t0, cv::Size(a, b), 0.0, 0.0, cv::INTER_CUBIC);
         cv::resize(imageRight_t0, imageRight_t0, cv::Size(a, b), 0.0, 0.0, cv::INTER_CUBIC);
 
-        /*
+        
         //video stab begins
         if (stabPossible)
         {
@@ -675,7 +675,7 @@ int main()
             gOldGrayLeft = gGrayLeft;
         }
         //video stab ends
-        */
+        
 
 
         t_a = clock();
