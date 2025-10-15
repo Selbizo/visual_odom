@@ -82,7 +82,7 @@ void integrateOdometryStereo(int frame_i, cv::Mat& rigid_body_transformation, cv
 
     rigid_body_transformation = rigid_body_transformation.inv();
     // if ((scale>0.1)&&(translation_stereo.at<double>(2) > translation_stereo.at<double>(0)) && (translation_stereo.at<double>(2) > translation_stereo.at<double>(1))) 
-    if (scale > 0.02 && scale < 40) 
+    if (scale > 0.002 && scale < 400000.0) 
     {
       // std::cout << "Rpose" << Rpose << std::endl;
 
@@ -91,7 +91,8 @@ void integrateOdometryStereo(int frame_i, cv::Mat& rigid_body_transformation, cv
     }
     else 
     {
-     std::cout << "[WARNING] scale below 0.1, or incorrect translation" << std::endl;
+        std::cout << "[WARNING] scale below 0.1, or incorrect translation" << std::endl;
+        std::cout << "  scale: " << scale;
     }
 }
 

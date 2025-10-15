@@ -47,12 +47,12 @@ bool keyResponse(int& keyboard, Mat& frame, Mat& croppedImg, Mat& crossRef, cuda
 	double& tauStab, double& framePart, Rect& roi);
 
 void showServiceInfo(Mat& writerFrame, double Q, double nsr, bool wiener, bool threadwiener, bool stabPossible, vector <TransformParam> transforms, vector <TransformParam> movement,vector <TransformParam> movementKalman,
-	double tauStab, double kSwitch, double framePart, int gP0_cols, int maxCorners,
+	double tauStab, double gain, double framePart, int gP0_cols, int maxCorners,
 	double seconds, double secondsPing, double secondsFullPing, int a, int b, vector <Point> textOrg, vector <Point> textOrgOrig, vector <Point> textOrgCrop, vector <Point> textOrgStab,
 	int fontFace, double fontScale, Scalar color);
 
 void showServiceInfoSmall(Mat& writerFrame, double Q, double nsr, bool wiener, bool threadwiener, bool stabPossible, vector <TransformParam> transforms, vector <TransformParam> movement, 
-	double tauStab, double kSwitch, double framePart, int gP0_cols, int maxCorners,
+	double tauStab, double gain, double framePart, int gP0_cols, int maxCorners,
 	double seconds, double secondsPing, double secondsFullPing, int a, int b, vector <Point> textOrg, vector <Point> textOrgOrig, vector <Point> textOrgCrop, vector <Point> textOrgStab,
 	int fontFace, double fontScale, Scalar color);
 

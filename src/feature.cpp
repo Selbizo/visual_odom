@@ -203,7 +203,7 @@ void circularMatching_gpu(cv::Mat img_l_0, cv::Mat img_r_0, cv::Mat img_l_1, cv:
 }
 #endif
 
-void bucketingFeatures(cv::Mat& image, FeatureSet& current_features, int bucket_size, int features_per_bucket)
+void bucketingFeatures(cv::Mat& image, FeatureSet& current_features, int bucket_size, int features_per_bucket, double crop)
 {
 // This function buckets features
 // image: only use for getting dimension of the image
@@ -239,13 +239,14 @@ void bucketingFeatures(cv::Mat& image, FeatureSet& current_features, int bucket_
 
     // get features back from buckets
     current_features.clear();
-    int nn = 10;
+    int nn = 20;
+
     for (int buckets_idx_height = buckets_nums_height/nn; buckets_idx_height <= buckets_nums_height*(nn-1)/nn; buckets_idx_height++)
     {
       for (int buckets_idx_width = buckets_nums_width/nn; buckets_idx_width <= buckets_nums_width*(nn-1)/nn; buckets_idx_width++)
       {
-        // if (!(buckets_idx_width > buckets_nums_width/nn && buckets_idx_width < buckets_nums_width*(nn-1)/nn && 
-        //       buckets_idx_height > buckets_nums_height/nn && buckets_idx_height < buckets_nums_height*(nn-1)/nn))
+        if ((buckets_idx_width > buckets_nums_width*(1.0 - crop)/2 && buckets_idx_width < buckets_nums_width*(1.0 + crop)/2 && 
+              buckets_idx_height > buckets_nums_height*(1.0 - crop)/2 && buckets_idx_height < buckets_nums_height*(1.0 + crop)/2))
         {
            buckets_idx = buckets_idx_height*buckets_nums_width + buckets_idx_width;
            Buckets[buckets_idx].get_features(current_features);
@@ -269,7 +270,7 @@ void appendNewFeatures(cv::Mat& image, FeatureSet& current_features)
 {
     std::vector<cv::Point2f>  points_new;
     featureDetectionFast(image, points_new);
-    // featureDetectionGoodFeaturesToTrack(image, points_new);
+    //featureDetectionGoodFeaturesToTrack(image, points_new);
     current_features.points.insert(current_features.points.end(), points_new.begin(), points_new.end());
     std::vector<int>  ages_new(points_new.size(), 0);
     current_features.ages.insert(current_features.ages.end(), ages_new.begin(), ages_new.end());

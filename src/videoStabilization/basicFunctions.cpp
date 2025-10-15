@@ -262,7 +262,7 @@ bool keyResponse(int& keyboard, Mat& frame, Mat& croppedImg, Mat& crossRef, cuda
 
 
 void showServiceInfo(Mat& writerFrame, double Q, double nsr, bool wiener, bool threadwiener, bool stabPossible, vector <TransformParam> transforms, vector <TransformParam> movement,vector <TransformParam> movementKalman,
-	double tauStab, double kSwitch, double framePart, int gP0_cols, int maxCorners,
+	double tauStab, double gain, double framePart, int gP0_cols, int maxCorners,
 	double seconds, double secondsPing, double secondsFullPing, int a, int b, vector <Point> textOrg, vector <Point> textOrgOrig, vector <Point> textOrgCrop, vector <Point> textOrgStab,
 	int fontFace, double fontScale, Scalar color)
 {
@@ -310,7 +310,7 @@ void showServiceInfo(Mat& writerFrame, double Q, double nsr, bool wiener, bool t
 }
 
 void showServiceInfoSmall(Mat& writerFrame, double Q, double nsr, bool wiener, bool threadwiener, bool stabPossible, vector <TransformParam> transforms, vector <TransformParam> movement, 
-	double tauStab, double kSwitch, double framePart, int gP0_cols, int maxCorners,
+	double tauStab, double gain, double framePart, int gP0_cols, int maxCorners,
 	double seconds, double secondsPing, double secondsFullPing, int a, int b, vector <Point> textOrg, vector <Point> textOrgOrig, vector <Point> textOrgCrop, vector <Point> textOrgStab,
 	int fontFace, double fontScale, Scalar color)
 {
@@ -340,7 +340,7 @@ void showServiceInfoSmall(Mat& writerFrame, double Q, double nsr, bool wiener, b
 		textOrg[temp_i], fontFace, fontScale, color, 2, 8, false); ++temp_i;
 	//cv::putText(writerFrame, format("[vX vY vRoll] %+2.2f %+2.2f %+2.2f]", velocity[0].dx, velocity[0].dy, velocity[0].da),
 	//	textOrg[temp_i], fontFace, fontScale, color, 2, 8, false); ++temp_i;
-	cv::putText(writerFrame, format("Tau[3][4]= %3.0f frames, gain = %1.2f", tauStab, kSwitch),
+	cv::putText(writerFrame, format("Tau[3][4]= %3.0f frames, gain = %1.2f", tauStab, gain),
 		textOrg[temp_i], fontFace, fontScale, color, 2, 8, false); ++temp_i;
 	cv::putText(writerFrame, format("Crop[w][s] = %+2.2f, %d Corners of %d.", 1 / framePart, gP0_cols, maxCorners),
 		textOrg[temp_i], fontFace, fontScale, color, 2, 8, false); ++temp_i;

@@ -72,7 +72,7 @@ void circularMatching(cv::Mat img_l_0, cv::Mat img_r_0, cv::Mat img_l_1, cv::Mat
                         FeatureSet& current_features);
 #endif
 
-void bucketingFeatures(cv::Mat& image, FeatureSet& current_features, int bucket_size, int features_per_bucket);
+void bucketingFeatures(cv::Mat& image, FeatureSet& current_features, int bucket_size, int features_per_bucket, double crop);
 
 void appendNewFeatures(cv::Mat& image, FeatureSet& current_features);
 

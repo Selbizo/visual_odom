@@ -85,17 +85,16 @@ void matchingFeatures(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
                       std::vector<cv::Point2f>&  pointsLeft_t0, 
                       std::vector<cv::Point2f>&  pointsRight_t0, 
                       std::vector<cv::Point2f>&  pointsLeft_t1, 
-                      std::vector<cv::Point2f>&  pointsRight_t1)
+                      std::vector<cv::Point2f>&  pointsRight_t1,
+                      double crop)
 {
     // ----------------------------
     // Feature detection using FAST
     // ----------------------------
     std::vector<cv::Point2f>  pointsLeftReturn_t0;   // feature points to check cicular mathcing validation
 
-
-    if (currentVOFeatures.size() < 1000)
+    if (currentVOFeatures.size() < 2000)
     {
-
         // append new features with old features
         appendNewFeatures(imageLeft_t0, currentVOFeatures);   
         // std::cout << "Current feature set size: " << currentVOFeatures.points.size() << std::endl;
@@ -105,8 +104,8 @@ void matchingFeatures(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
     // Feature tracking using KLT tracker, bucketing and circular matching
     // --------------------------------------------------------
     int bucket_size = imageLeft_t0.rows/20;
-    int features_per_bucket = 4;
-    bucketingFeatures(imageLeft_t0, currentVOFeatures, bucket_size, features_per_bucket);
+    int features_per_bucket = 1;
+    bucketingFeatures(imageLeft_t0, currentVOFeatures, bucket_size, features_per_bucket, crop);
 
     pointsLeft_t0 = currentVOFeatures.points;
     
@@ -126,7 +125,6 @@ void matchingFeatures(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
     removeInvalidPoints(pointsRight_t1, status);
 
     currentVOFeatures.points = pointsLeft_t1;
-
 }
 
 
@@ -197,31 +195,31 @@ void trackingFrame2Frame(cv::Mat& projMatrl, cv::Mat& projMatrr,
 
 void displayTracking(cv::Mat& imageLeft_t1, 
                      std::vector<cv::Point2f>&  pointsLeft_t0,
-                     std::vector<cv::Point2f>&  pointsLeft_t1)
+                     std::vector<cv::Point2f>&  pointsLeft_t1,
+                     std::string name)
 {
       // -----------------------------------------
       // Display feature racking
       // -----------------------------------------
       int radius = 2;
       cv::Mat vis;
-
       cv::cvtColor(imageLeft_t1, vis, cv::COLOR_GRAY2BGR, 3);
 
 
       for (int i = 0; i < pointsLeft_t0.size(); i++)
       {
-          cv::circle(vis, cv::Point(pointsLeft_t0[i].x, pointsLeft_t0[i].y), radius, CV_RGB(255, 0, 0));
+          cv::circle(vis, cv::Point(pointsLeft_t0[i].x, pointsLeft_t0[i].y), radius, CV_RGB(100, 0, 0));
       }
 
       for (int i = 0; i < pointsLeft_t1.size(); i++)
       {
-          cv::circle(vis, cv::Point(pointsLeft_t1[i].x, pointsLeft_t1[i].y), radius, CV_RGB(255, 0, 0));
+          cv::circle(vis, cv::Point(pointsLeft_t1[i].x, pointsLeft_t1[i].y), radius+1, CV_RGB(200, 0, 0), -1);
       }
 
       for (int i = 0; i < pointsLeft_t1.size(); i++)
       {
-          cv::line(vis, pointsLeft_t0[i], pointsLeft_t1[i], CV_RGB(30, 150, 30));
+          cv::line(vis, pointsLeft_t0[i], pointsLeft_t1[i], CV_RGB(10, 100, 10));
       }
     //   cv::waitKey(200);
-      cv::imshow("vis ", vis );  
+      cv::imshow(name, vis );  
 }

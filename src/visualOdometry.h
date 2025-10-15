@@ -30,7 +30,8 @@ void matchingFeatures(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
                       std::vector<cv::Point2f>&  pointsLeft_t0, 
                       std::vector<cv::Point2f>&  pointsRight_t0, 
                       std::vector<cv::Point2f>&  pointsLeft_t1, 
-                      std::vector<cv::Point2f>&  pointsRight_t1);
+                      std::vector<cv::Point2f>&  pointsRight_t1,
+                      double crop);
 
 
 void trackingFrame2Frame(cv::Mat& projMatrl, cv::Mat& projMatrr,
@@ -44,6 +45,7 @@ void trackingFrame2Frame(cv::Mat& projMatrl, cv::Mat& projMatrr,
 
 void displayTracking(cv::Mat& imageLeft_t1, 
                      std::vector<cv::Point2f>&  pointsLeft_t0,
-                     std::vector<cv::Point2f>&  pointsLeft_t1);
+                     std::vector<cv::Point2f>&  pointsLeft_t1,
+                     std::string name);
 
 #endif

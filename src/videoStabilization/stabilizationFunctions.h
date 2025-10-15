@@ -29,17 +29,17 @@ void createDetectors(Ptr<cuda::CornersDetector>& d_features, Ptr<cuda::CornersDe
 void initFirstFrame(VideoCapture& capture, Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gOldCompressed, cuda::GpuMat& gOldGray,
 	cuda::GpuMat& gP0, vector<Point2f>& p0,
 	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
-	double& kSwitch, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
+	double& gain, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
 
 void initFirstFrame(cuda::GpuMat& gOldGray,
 	cuda::GpuMat& gP0, vector<Point2f>& p0,
 	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
-	double& kSwitch, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
+	double& gain, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
 
    void initFirstFrameZero(Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gOldGray,
 	cuda::GpuMat& gOldCompressed, cuda::GpuMat& gP0, vector<Point2f>& p0,
 	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
-	double& kSwitch, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
+	double& gain, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
 
 void getBiasAndRotation(vector<Point2f>& p0, vector<Point2f>& p1, Point2f& d,
 	vector <TransformParam>& transforms, Mat& T, const int compression);
@@ -52,12 +52,12 @@ void iir(vector<TransformParam>& transforms, double& tau_stab, Rect& roi, Mat& f
 void initFirstFrame(VideoCapture& capture, Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gOldCompressed, cuda::GpuMat& gOldGray,
 	cuda::GpuMat& gP0, vector<Point2f>& p0,
 	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
-	double& kSwitch, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
+	double& gain, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
 
 void initFirstFrameZero(Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gOldGray,
 	cuda::GpuMat& gOldCompressed, cuda::GpuMat& gP0, vector<Point2f>& p0,
 	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
-	double& kSwitch, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
+	double& gain, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
 
 void getBiasAndRotation(vector<Point2f>& p0, vector<Point2f>& p1, Point2f& d, Point2f& meanP0,
 	vector <TransformParam>& transforms, Mat& T, const int compression);
@@ -71,14 +71,14 @@ void addFramePoints(cuda::GpuMat& gOldGray, vector<Point2f>& p0,
 void removeFramePoints(vector<Point2f>& p0, double minDistance);
 
 void iirAdaptiveOld(vector<TransformParam>& transforms, double& tau_stab, 
-	Rect& roi, const int a, const int b, const double c, double& kSwitch);
+	Rect& roi, const int a, const int b, const double c, double& gain);
 
 void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab, 
-	Rect& roi, const int a, const int b, const double c, double& kSwitch, 
+	Rect& roi, const int a, const int b, const double c, double& gain, 
 	vector<TransformParam>& movement, vector<TransformParam>& movementKalman);
 
 void iirAdaptive(vector<TransformParam>& transforms, double& tau_stab, 
-	Rect& roi, const int a, const int b, const double c, double& kSwitch, 
+	Rect& roi, const int a, const int b, const double c, double& gain, 
 	vector<TransformParam>& movement, vector<TransformParam>& movementKalman);
 
 #define NCoef 10
