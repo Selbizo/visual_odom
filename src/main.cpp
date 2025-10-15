@@ -98,7 +98,7 @@ int main()
     cout << "Calibration Filepath: " << strSettingPath << endl;
 
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
-    unsigned int frame_skip = 2;
+    int frame_skip = 1;
     
     float fx = fSettings["Camera.fx"];
     float fy = fSettings["Camera.fy"];
@@ -107,8 +107,8 @@ int main()
     float bf = fSettings["Camera.bf"];
 
 
-    double MaxShake = 3.0;
-    double framePart = 0.98;
+    double MaxShake = 5.0;
+    double framePart = 0.7;
     fx = fx/framePart;
     fy = fy/framePart;
     cx = cx/framePart;
@@ -506,9 +506,13 @@ int main()
             loadImageRight(imageRight_t1_color, imageRight_t1, frame_id, filepath);      
         }
 
-        noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake));// + MaxShake*sin(frame_id*DEG_TO_RAD*30.0);
-        noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake));// + MaxShake*cos(frame_id*DEG_TO_RAD*10.0);
-        noiseIn.da = (double)(rng.uniform(-sqrt(MaxShake)/1000, sqrt(MaxShake)/1000));
+        if (frame_id < 80 && frame_skip < 0)
+            frame_skip = 1;
+        if (frame_id > 130000 && frame_skip > 0)
+            frame_skip = -1;
+        noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake))*0.2 + MaxShake*sin(frame_id*DEG_TO_RAD*30.0);
+        noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake))*0.2 + MaxShake*cos(frame_id*DEG_TO_RAD*40.0);
+        //noiseIn.da = (double)(rng.uniform(-sqrt(MaxShake)/1000, sqrt(MaxShake)/1000));
         // noiseIn.da = 0.0*sin(frame_id*DEG_TO_RAD*9.9);
 
         //noiseOut[0] = iirNoise(noiseIn, X,Y);
@@ -529,13 +533,14 @@ int main()
         pointsLeft_t1_stab.clear();
         pointsRight_t1_stab.clear();
         
-        matchingFeatures( imageLeft_t0, imageRight_t0,
+        matchingFeaturesStab( imageLeft_t0, imageRight_t0,
                           imageLeft_t1, imageRight_t1, 
                           currentVOFeatures_stab,
                           pointsLeft_t0_stab, 
                           pointsRight_t0_stab, 
                           pointsLeft_t1_stab, 
                           pointsRight_t1_stab,
+                          d_features,
                           crop*0.5);
 
         cv::Mat tempImagForTest;
@@ -702,7 +707,7 @@ int main()
 
         rigid_body_transformation.release();
 
-        if(abs(rotation_euler[1])<0.4*MaxShake*frame_skip && abs(rotation_euler[0])<0.4*MaxShake*frame_skip && abs(rotation_euler[2])<0.4*MaxShake*frame_skip)
+        if(abs(rotation_euler[1])<0.4*MaxShake*abs(frame_skip) && abs(rotation_euler[0])<0.4*MaxShake*abs(frame_skip) && abs(rotation_euler[2])<0.4*MaxShake*abs(frame_skip))
         {
             integrateOdometryStereo(frame_id, rigid_body_transformation, frame_pose, 
                                rotation, translation);

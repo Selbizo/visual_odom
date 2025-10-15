@@ -127,6 +127,55 @@ void matchingFeatures(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
     currentVOFeatures.points = pointsLeft_t1;
 }
 
+void matchingFeaturesStab(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
+                      cv::Mat& imageLeft_t1, cv::Mat& imageRight_t1, 
+                      FeatureSet& currentVOFeatures,
+                      std::vector<cv::Point2f>&  pointsLeft_t0, 
+                      std::vector<cv::Point2f>&  pointsRight_t0, 
+                      std::vector<cv::Point2f>&  pointsLeft_t1, 
+                      std::vector<cv::Point2f>&  pointsRight_t1,
+                      Ptr<cuda::CornersDetector>& d_features,
+                      double crop)
+{
+    // ----------------------------
+    // Feature detection using FAST
+    // ----------------------------
+    std::vector<cv::Point2f>  pointsLeftReturn_t0;   // feature points to check cicular mathcing validation
+
+    if (currentVOFeatures.size() < 100)
+    {
+        // append new features with old features
+        appendNewFeatures(d_features, imageLeft_t0, currentVOFeatures);   
+        // std::cout << "Current feature set size: " << currentVOFeatures.points.size() << std::endl;
+    }
+
+    // --------------------------------------------------------
+    // Feature tracking using KLT tracker, bucketing and circular matching
+    // --------------------------------------------------------
+
+    int bucket_size = imageLeft_t0.rows/4;
+    int features_per_bucket = 5000;
+    bucketingFeatures(imageLeft_t0, currentVOFeatures, bucket_size, features_per_bucket, crop);
+
+    pointsLeft_t0 = currentVOFeatures.points;
+    
+    #if USE_CUDA
+    	circularMatching_gpu(imageLeft_t0, imageRight_t0, imageLeft_t1, imageRight_t1,
+                     pointsLeft_t0, pointsRight_t0, pointsLeft_t1, pointsRight_t1, pointsLeftReturn_t0, currentVOFeatures);
+    #else
+	    circularMatching(imageLeft_t0, imageRight_t0, imageLeft_t1, imageRight_t1,
+                     pointsLeft_t0, pointsRight_t0, pointsLeft_t1, pointsRight_t1, pointsLeftReturn_t0, currentVOFeatures);
+    #endif
+    std::vector<bool> status;
+    checkValidMatch(pointsLeft_t0, pointsLeftReturn_t0, status, 0);
+
+    removeInvalidPoints(pointsLeft_t0, status);
+    removeInvalidPoints(pointsLeft_t1, status);
+    removeInvalidPoints(pointsRight_t0, status);
+    removeInvalidPoints(pointsRight_t1, status);
+
+    currentVOFeatures.points = pointsLeft_t1;
+}
 
 void trackingFrame2Frame(cv::Mat& projMatrl, cv::Mat& projMatrr,
                          std::vector<cv::Point2f>&  pointsLeft_t0,

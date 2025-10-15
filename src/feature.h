@@ -78,4 +78,6 @@ void appendNewFeatures(cv::Mat& image, FeatureSet& current_features);
 
 void appendNewFeatures(std::vector<cv::Point2f> points_new, FeatureSet& current_features);
 
+void appendNewFeatures(cv::Ptr<cv::cuda::CornersDetector>& d_features, cv::Mat& image, FeatureSet& current_features);
+
 #endif
