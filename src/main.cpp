@@ -107,8 +107,8 @@ int main()
     float bf = fSettings["Camera.bf"];
 
 
-    double MaxShake = 5.0;
-    double framePart = 0.7;
+    double MaxShake = 10.0;
+    double framePart = 0.9;
     fx = fx/framePart;
     fy = fy/framePart;
     cx = cx/framePart;
@@ -198,8 +198,8 @@ int main()
 
 	cuda::GpuMat gStatusLeft, gErrLeft, gStatusRight, gErrRight;
 	
-	double tauStab = 100.0;
-	double gain = 0.5;
+	double tauStab = 20.0;
+	double gain = 0.7;
 	//double framePart = 0.95;
 
 	const unsigned int firSize = 4;
@@ -508,12 +508,12 @@ int main()
 
         if (frame_id < 80 && frame_skip < 0)
             frame_skip = 1;
-        if (frame_id > 130000 && frame_skip > 0)
+        if (frame_id > 13000 && frame_skip > 0)
             frame_skip = -1;
-        noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake))*0.2 + MaxShake*sin(frame_id*DEG_TO_RAD*30.0);
-        noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake))*0.2 + MaxShake*cos(frame_id*DEG_TO_RAD*40.0);
+        noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake))*0.0 + MaxShake*sin(frame_id*DEG_TO_RAD*40.0);
+        //noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake))*1.0 + MaxShake*cos(frame_id*DEG_TO_RAD*2.0);
         //noiseIn.da = (double)(rng.uniform(-sqrt(MaxShake)/1000, sqrt(MaxShake)/1000));
-        // noiseIn.da = 0.0*sin(frame_id*DEG_TO_RAD*9.9);
+        //noiseIn.da = 0.1*sin(frame_id*DEG_TO_RAD*1.0);
 
         //noiseOut[0] = iirNoise(noiseIn, X,Y);
         noiseOut[0] = noiseIn;
@@ -541,7 +541,7 @@ int main()
                           pointsLeft_t1_stab, 
                           pointsRight_t1_stab,
                           d_features,
-                          crop*0.5);
+                          0.6);
 
         cv::Mat tempImagForTest;
         imageLeft_t1.copyTo(tempImagForTest);
@@ -604,7 +604,7 @@ int main()
         showServiceInfoSmall(imageLeft_t1_color, 1.0, 1.0, true, true, true, transforms, movementKalman, tauStab, gain, framePart, pointsLeft_t0_stab.max_size(), 1, 1.0, 1.0, 1.0, a, b, textOrg, textOrgOrig, textOrgCrop, textOrgStab, fontFace, fontScale, colorGREEN);
         
         imshow("imageLeft_t1_color", imageLeft_t1_color);
-        imshow("imageLeft_stab_t0", imageLeft_stab_t0);
+        //imshow("imageLeft_stab_t0", imageLeft_stab_t0);
 
         t_a = clock();
 
@@ -615,14 +615,14 @@ int main()
         pointsLeft_t1.clear();
         pointsRight_t1.clear();
         
-        matchingFeatures( imageLeft_stab_t0, imageRight_stab_t0,
-                          imageLeft_stab_t1, imageRight_stab_t1, 
+        matchingFeatures( gain > 0.5 ? imageLeft_stab_t0 : imageLeft_t0, gain > 0.5 ? imageRight_stab_t0 : imageRight_t0,
+                          gain > 0.5 ? imageLeft_stab_t1 : imageLeft_t1, gain > 0.5 ? imageRight_stab_t1 : imageRight_t1,
                           currentVOFeatures,
                           pointsLeft_t0, 
                           pointsRight_t0, 
                           pointsLeft_t1, 
                           pointsRight_t1,
-                          1.0);
+                          1.0); //не доворачивает повороты
 
         imageLeft_t1.copyTo(imageLeft_t0);
         imageRight_t1.copyTo(imageRight_t0);
@@ -696,7 +696,9 @@ int main()
 
         // cv::Mat tempImage;
         // cv::addWeighted(imageLeft_t1, 0.25, imageRight_t1, 0.25, 1.4, tempImage);
-        displayTracking(imageLeft_stab_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
+
+        //displayTracking(imageLeft_stab_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
+
         // displayTracking(imageRight_t1, pointsRight_t0, pointsRight_t1, "vis_right"); //show input image
         // displayTracking(tempImage, pointsRight_t0, pointsLeft_t0, "vis_both"); //show input image
 

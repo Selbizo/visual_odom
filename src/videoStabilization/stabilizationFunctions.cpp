@@ -31,7 +31,7 @@ void createDetectors(Ptr<cuda::CornersDetector>& d_features, Ptr<cuda::CornersDe
 		cv::Size(winSize, winSize), maxLevel, iters);
 }
 
-
+/*
 void initFirstFrame(VideoCapture& capture, Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gOldCompressed, cuda::GpuMat& gOldGray,
 	cuda::GpuMat& gP0, vector<Point2f>& p0,
 	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
@@ -138,7 +138,7 @@ void initFirstFrameZero(Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gO
 	//cuda::resize(gOldGray, gOldGray, Size(gOldGray.cols, gOldGray.rows), 0.0, 0.0, cv::INTER_AREA);
 	stab_possible = false;
 }
-
+*/
 void getBiasAndRotation(vector<Point2f>& p0, vector<Point2f>& p1, Point2f& d, Point2f& meanP0,
 	vector <TransformParam>& transforms, Mat& T, const int compression)
 {
@@ -391,6 +391,9 @@ void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab, R
 	} 
 	else 
 	{
+		transforms[0].dx = gain * (transforms[0].dx * (tau_stab - 1.0) / tau_stab + gain *0.5* transforms[1].dx) - movementKalman[1].dx;
+		transforms[0].dy = gain * (transforms[0].dy * (tau_stab - 1.0) / tau_stab + gain *0.5* transforms[1].dy) - movementKalman[1].dy;
+		transforms[0].da = gain * (transforms[0].da * (tau_stab - 1.0) / tau_stab + gain *0.5* transforms[1].da) - movementKalman[1].da;
 		cout<<"iirAdaptiveHighPass Explosion Detected"<<endl;
 	}
 

@@ -26,20 +26,20 @@ using namespace std;
 void createDetectors(Ptr<cuda::CornersDetector>& d_features, Ptr<cuda::CornersDetector>& d_features_small,
 			Ptr<cuda::SparsePyrLKOpticalFlow>& d_pyrLK_sparse);
 
-void initFirstFrame(VideoCapture& capture, Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gOldCompressed, cuda::GpuMat& gOldGray,
-	cuda::GpuMat& gP0, vector<Point2f>& p0,
-	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
-	double& gain, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
+// void initFirstFrame(VideoCapture& capture, Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gOldCompressed, cuda::GpuMat& gOldGray,
+// 	cuda::GpuMat& gP0, vector<Point2f>& p0,
+// 	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
+// 	double& gain, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
 
-void initFirstFrame(cuda::GpuMat& gOldGray,
-	cuda::GpuMat& gP0, vector<Point2f>& p0,
-	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
-	double& gain, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
+// void initFirstFrame(cuda::GpuMat& gOldGray,
+// 	cuda::GpuMat& gP0, vector<Point2f>& p0,
+// 	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
+// 	double& gain, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
 
-   void initFirstFrameZero(Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gOldGray,
-	cuda::GpuMat& gOldCompressed, cuda::GpuMat& gP0, vector<Point2f>& p0,
-	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
-	double& gain, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
+//    void initFirstFrameZero(Mat& oldFrame, cuda::GpuMat& gOldFrame, cuda::GpuMat& gOldGray,
+// 	cuda::GpuMat& gOldCompressed, cuda::GpuMat& gP0, vector<Point2f>& p0,
+// 	double& qualityLevel, double& harrisK, int& maxCorners, Ptr<cuda::CornersDetector>& d_features, vector <TransformParam>& transforms,
+// 	double& gain, const int a, const int b, const int compression, cuda::GpuMat& mask_device, bool& stab_possible);
 
 void getBiasAndRotation(vector<Point2f>& p0, vector<Point2f>& p1, Point2f& d,
 	vector <TransformParam>& transforms, Mat& T, const int compression);
