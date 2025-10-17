@@ -108,7 +108,7 @@ int main()
 
 
     double MaxShake = 10.0;
-    double framePart = 0.9;
+    double framePart = 0.94;
     fx = fx/framePart;
     fy = fy/framePart;
     cx = cx/framePart;
@@ -477,7 +477,7 @@ int main()
     std::vector<cv::Point2f> pointsLeft_t0, pointsRight_t0, pointsLeft_t1, pointsRight_t1;
     cv::Mat rotation_stab = cv::Mat::eye(3, 3, CV_64F);
     cv::Mat translation_stab = cv::Mat::zeros(3, 1, CV_64F);
-    
+
     //std::vector<cv::Point2f> oldPointsLeft_t0_stab;
     std::vector<cv::Point2f> pointsLeft_t0_stab, pointsRight_t0_stab, pointsLeft_t1_stab, pointsRight_t1_stab;
     double crop = framePart;
@@ -505,8 +505,8 @@ int main()
         }
         else
         {
-            loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id, filepath);  //%1+1
-            loadImageRight(imageRight_t1_color, imageRight_t1, frame_id, filepath);      
+            loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id%1+1, filepath);  //%1+1
+            loadImageRight(imageRight_t1_color, imageRight_t1, frame_id%1+1, filepath);   
         }
 
         if (frame_id < 80 && frame_skip < 0)
@@ -514,9 +514,8 @@ int main()
         if (frame_id > 13000 && frame_skip > 0)
             frame_skip = -1;
         noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake))*0.0 + MaxShake*sin(frame_id*DEG_TO_RAD*40.0);
-        //noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake))*1.0 + MaxShake*cos(frame_id*DEG_TO_RAD*2.0);
-        //noiseIn.da = (double)(rng.uniform(-sqrt(MaxShake)/1000, sqrt(MaxShake)/1000));
-        //noiseIn.da = 0.1*sin(frame_id*DEG_TO_RAD*1.0);
+        //noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake))*0.0 + MaxShake*cos(frame_id*DEG_TO_RAD*20.0);
+        //noiseIn.da = (double)(rng.uniform(-sqrt(MaxShake)/1000, sqrt(MaxShake)/1000)) + 3.0*sqrt(MaxShake)/1000*sin(frame_id*DEG_TO_RAD*10.0);
 
         //noiseOut[0] = iirNoise(noiseIn, X,Y);
         noiseOut[0] = noiseIn;
@@ -550,7 +549,28 @@ int main()
         imageLeft_t1.copyTo(tempImagForTest);
 
         getBiasAndRotation(pointsLeft_t0_stab, pointsLeft_t1_stab, dLeft, meanP0Left, transforms, TLeft, compression); //перемещение между кадрами оценивается как первая производная
-
+        // std::cout << std::endl << "1 - TLeft = " << std::endl << TLeft<< std::endl;
+                
+        // points3D_t0_stab.release();
+        // points4D_t0_stab.release();
+        // if (pointsLeft_t0_stab.size()>5)
+        // {
+        //     cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t0_stab,  pointsRight_t0_stab,  points4D_t0_stab);
+        //     cv::convertPointsFromHomogeneous(points4D_t0_stab.t(), points3D_t0_stab);
+        //     trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0_stab, pointsLeft_t1_stab, points3D_t0_stab, rotation_stab, translation_stab, frame_skip, false);
+        //     cv::Mat temp_TLeft = (cv::Mat_<double>(2, 3) << 
+        //     rotation_stab.at<double>(0, 0), rotation_stab.at<double>(0, 1), rotation_stab.at<double>(0, 2),
+        //     rotation_stab.at<double>(1, 0), rotation_stab.at<double>(1, 1), rotation_stab.at<double>(1, 2));
+        //     //transforms[1] = TransformParam(-temp_TLeft.at<double>(0, 2)*compression, -temp_TLeft.at<double>(1, 2)*compression, -atan2(temp_TLeft.at<double>(1, 0), temp_TLeft.at<double>(0, 0)));
+        //     std::cout << "2 - TLeft = " << std::endl << temp_TLeft<< std::endl;
+        //     std::cout << "3 - rotation_stab = " << std::endl << rotation_stab << std::endl;
+        //     rotation_euler_stab = rotationMatrixToEulerAngles(rotation_stab);
+        //     rotation_euler_stab[0] = rotation_euler_stab[0];
+        //     rotation_euler_stab[1] = rotation_euler_stab[1];
+        //     std::cout << "4 - rotation_euler_stab = " << std::endl << rotation_euler_stab << std::endl;
+        // }
+        //transforms[1] = TransformParam(-rotation_euler_stab[0]*fx*compression, -rotation_euler_stab[1]*fx*compression, -rotation_euler_stab[2]);
+        
         iirAdaptiveHighPass(transforms, tauStab, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
         if (gain < 1.0)
         {
@@ -700,7 +720,7 @@ int main()
         // cv::Mat tempImage;
         // cv::addWeighted(imageLeft_t1, 0.25, imageRight_t1, 0.25, 1.4, tempImage);
 
-        //displayTracking(imageLeft_stab_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
+        displayTracking(imageLeft_stab_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
 
         // displayTracking(imageRight_t1, pointsRight_t0, pointsRight_t1, "vis_right"); //show input image
         // displayTracking(tempImage, pointsRight_t0, pointsLeft_t0, "vis_both"); //show input image

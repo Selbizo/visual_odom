@@ -157,10 +157,10 @@ void getBiasAndRotation(vector<Point2f>& p0, vector<Point2f>& p1, Point2f& d, Po
 	d = d * compression / (int)p0.size();
 	meanP0 = meanP0 * compression / (int)p0.size();
 
-	if (p0.empty() || p1.empty() || (p1.size() != p0.size()) || p1.size() < 5 || p0.size() < 5)
+	if (p0.empty() || p1.empty() || (p1.size() != p0.size()) || p1.size() < 4 || p0.size() < 4)
 	{
 		transforms[1] = TransformParam(-d.x * compression, -d.y * compression, 0.0);
-		cout << "bull shit" << endl;
+		cout << "get Bias And Rotation Too Few Points:" << p0.size() << endl;
 	}
 	else
 	{
@@ -383,7 +383,7 @@ void iirAdaptiveOld(vector<TransformParam>& transforms, double& tau_stab, Rect& 
 
 void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab, Rect& roi, const int a, const int b, const double c, double& gain, vector<TransformParam>& movement, vector<TransformParam>& movementKalman)//, cv::KalmanFilter& KF)
 {
-	if ((abs(transforms[1].dx) - 20.0 < 3.0 * transforms[3].dx) && (abs(transforms[1].dy) - 20.0 < 3.0 * transforms[3].dy) && (abs(transforms[1].da) - 10.0*DEG_TO_RAD < 3.0 * transforms[3].da)) //проверка на выброс в данных должна устраняться фильтром Калмана
+	if ((abs(transforms[1].dx) - 20.0 < 3.0 * transforms[3].dx) || (abs(transforms[1].dy) - 20.0 < 3.0 * transforms[3].dy) || (abs(transforms[1].da) - 10.0*DEG_TO_RAD < 3.0 * transforms[3].da)) //проверка на выброс в данных должна устраняться фильтром Калмана
 	{
 		transforms[0].dx = gain * (transforms[0].dx * (tau_stab - 1.0) / tau_stab + gain * transforms[1].dx) - movementKalman[1].dx;
 		transforms[0].dy = gain * (transforms[0].dy * (tau_stab - 1.0) / tau_stab + gain * transforms[1].dy) - movementKalman[1].dy;
@@ -391,9 +391,9 @@ void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab, R
 	} 
 	else 
 	{
-		transforms[0].dx = gain * (transforms[0].dx * (tau_stab - 1.0) / tau_stab + gain *0.5* transforms[1].dx) - movementKalman[1].dx;
-		transforms[0].dy = gain * (transforms[0].dy * (tau_stab - 1.0) / tau_stab + gain *0.5* transforms[1].dy) - movementKalman[1].dy;
-		transforms[0].da = gain * (transforms[0].da * (tau_stab - 1.0) / tau_stab + gain *0.5* transforms[1].da) - movementKalman[1].da;
+		transforms[0].dx = gain * (transforms[0].dx * (tau_stab - 1.0) / tau_stab + gain * transforms[1].dx) - movementKalman[1].dx;
+		transforms[0].dy = gain * (transforms[0].dy * (tau_stab - 1.0) / tau_stab + gain * transforms[1].dy) - movementKalman[1].dy;
+		transforms[0].da = gain * (transforms[0].da * (tau_stab - 1.0) / tau_stab + gain * transforms[1].da) - movementKalman[1].da;
 		cout<<"iirAdaptiveHighPass Explosion Detected"<<endl;
 	}
 
@@ -421,37 +421,33 @@ void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab, R
 	{
 		transforms[0].dx = double(1 - roi.x);
 		if (tau_stab > 50) {
-			tau_stab *= 0.9;
-			//transforms[0].da *= 0.999;
-			gain *= 0.95;
+			tau_stab *= 0.95;
+			gain *= 0.995;
 		}
 	}
 	else if (roi.x + roi.width + (int)transforms[0].dx >= a)
 	{
 		transforms[0].dx = (double)(a - roi.x - roi.width);
 		if (tau_stab > 50) {
-			tau_stab *= 0.9;
-			//transforms[0].da *= 0.999;
-			gain *= 0.95;
+			tau_stab *= 0.95;
+			gain *= 0.99;
 		}
 	}
 
 	if (roi.y + (int)transforms[1].dy < 0)
 	{
 		transforms[0].dy = (double)(1 - roi.y);
-		if (tau_stab > 10) {
-			tau_stab *= 0.9;
-			//transforms[0].da *= 0.999;
-			gain *= 0.95;
+		if (tau_stab > 50) {
+			tau_stab *= 0.95;
+			gain *= 0.99;
 		}
 	}
 	else if (roi.y + roi.height + (int)transforms[0].dy >= b)
 	{
 		transforms[0].dy = (double)(b - roi.y - roi.height);
 		if (tau_stab > 50) {
-			tau_stab *= 0.9;
-			//transforms[0].da *= 0.999;
-			gain *= 0.95;
+			tau_stab *= 0.95;
+			gain *= 0.99;
 		}
 	}
 

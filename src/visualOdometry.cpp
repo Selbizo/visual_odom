@@ -142,7 +142,7 @@ void matchingFeaturesStab(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
     // ----------------------------
     std::vector<cv::Point2f>  pointsLeftReturn_t0;   // feature points to check cicular mathcing validation
 
-    if (currentVOFeatures.size() < 100)
+    if (currentVOFeatures.size() < 1000)
     {
         // append new features with old features
         appendNewFeatures(d_features, imageLeft_t0, currentVOFeatures);   
@@ -153,8 +153,8 @@ void matchingFeaturesStab(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
     // Feature tracking using KLT tracker, bucketing and circular matching
     // --------------------------------------------------------
 
-    int bucket_size = imageLeft_t0.rows/4;
-    int features_per_bucket = 5000;
+    int bucket_size = imageLeft_t0.rows/7;
+    int features_per_bucket = 500;
     bucketingFeatures(imageLeft_t0, currentVOFeatures, bucket_size, features_per_bucket, crop);
 
     pointsLeft_t0 = currentVOFeatures.points;
