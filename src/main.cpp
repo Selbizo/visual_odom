@@ -469,11 +469,14 @@ int main()
     cv::Mat imageLeft_t1_color, imageRight_t1_color;  
     cv::Mat imageRight_t1,  imageLeft_t1;
     cv::Mat imageRight_stab_t1,  imageLeft_stab_t1;
-    
+    cv::Mat points3D_t0_stab, points4D_t0_stab;
+    cv::Vec3f rotation_euler_stab;
     cv::Mat state;
     
     //std::vector<cv::Point2f> oldPointsLeft_t0;
     std::vector<cv::Point2f> pointsLeft_t0, pointsRight_t0, pointsLeft_t1, pointsRight_t1;
+    cv::Mat rotation_stab = cv::Mat::eye(3, 3, CV_64F);
+    cv::Mat translation_stab = cv::Mat::zeros(3, 1, CV_64F);
     
     //std::vector<cv::Point2f> oldPointsLeft_t0_stab;
     std::vector<cv::Point2f> pointsLeft_t0_stab, pointsRight_t0_stab, pointsLeft_t1_stab, pointsRight_t1_stab;
