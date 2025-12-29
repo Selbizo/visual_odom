@@ -583,3 +583,58 @@ void addGaussianNoise(cv::Mat &image, double mean = 0, double stddev = 20) {
     image += noise; // Добавление шума к изображению
 }
 
+cv::Mat calculateAffineTransformAndPixelShift(cv::Mat& rotation, cv::Mat& translation, 
+                                            cv::Mat& intrinsic_matrix, cv::Size image_size)
+{
+    // 1. Создаем матрицу аффинного преобразования (4x4)
+    cv::Mat affine_transform = cv::Mat::eye(4, 4, CV_64F);
+    
+    // Копируем вращение и трансляцию в аффинную матрицу
+    rotation.copyTo(affine_transform(cv::Rect(0, 0, 3, 3)));
+    translation.copyTo(affine_transform(cv::Rect(3, 0, 1, 3)));
+    
+    // 2. Рассчитываем смещение пикселей на изображении
+    
+    // Создаем однородные координаты для центра изображения и углов
+    std::vector<cv::Point3f> image_points_3d;
+    cv::Point2f center(image_size.width/2.0f, image_size.height/2.0f);
+    
+    // Центр изображения (в 3D, z=1)
+    image_points_3d.push_back(cv::Point3f(center.x, center.y, 1.0f));
+    // Углы изображения
+    image_points_3d.push_back(cv::Point3f(0, 0, 1.0f));
+    image_points_3d.push_back(cv::Point3f(image_size.width, 0, 1.0f));
+    image_points_3d.push_back(cv::Point3f(0, image_size.height, 1.0f));
+    image_points_3d.push_back(cv::Point3f(image_size.width, image_size.height, 1.0f));
+    
+    // Преобразуем точки с помощью вращения
+    std::vector<cv::Point2f> original_points, transformed_points;
+    
+    for (const auto& point_3d : image_points_3d) {
+        // Преобразуем в нормализованные координаты камеры
+        cv::Mat point_cam = (cv::Mat_<double>(3,1) << point_3d.x, point_3d.y, point_3d.z);
+        cv::Mat point_cam_normalized = intrinsic_matrix.inv() * point_cam;
+        
+        // Применяем вращение
+        cv::Mat point_rotated = rotation * point_cam_normalized;
+        
+        // Обратно в координаты изображения
+        cv::Mat point_image = intrinsic_matrix * point_rotated;
+        
+        // Нормализуем (делим на z)
+        cv::Point2f orig_point(point_3d.x, point_3d.y);
+        cv::Point2f trans_point(point_image.at<double>(0)/point_image.at<double>(2),
+                               point_image.at<double>(1)/point_image.at<double>(2));
+        
+        original_points.push_back(orig_point);
+        transformed_points.push_back(trans_point);
+    }
+    
+    // Рассчитываем смещение для центра изображения
+    cv::Point2f center_shift = transformed_points[0] - original_points[0];
+    
+    std::cout << "Pixel shift (center): " << center_shift << std::endl;
+    std::cout << "Affine transform matrix: " << std::endl << affine_transform << std::endl;
+    
+    return affine_transform;
+}

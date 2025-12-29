@@ -505,8 +505,8 @@ int main()
         }
         else
         {
-            loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id%1+1, filepath);  //%1+1
-            loadImageRight(imageRight_t1_color, imageRight_t1, frame_id%1+1, filepath);   
+            loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id%10000+1, filepath);  //%1+1
+            loadImageRight(imageRight_t1_color, imageRight_t1, frame_id%10000+1, filepath);   
         }
 
         if (frame_id < 80 && frame_skip < 0)
@@ -549,26 +549,35 @@ int main()
         imageLeft_t1.copyTo(tempImagForTest);
 
         getBiasAndRotation(pointsLeft_t0_stab, pointsLeft_t1_stab, dLeft, meanP0Left, transforms, TLeft, compression); //перемещение между кадрами оценивается как первая производная
-        // std::cout << std::endl << "1 - TLeft = " << std::endl << TLeft<< std::endl;
+        std::cout << std::endl << "1 - TLeft = " << std::endl << TLeft<< std::endl;
                 
-        // points3D_t0_stab.release();
-        // points4D_t0_stab.release();
-        // if (pointsLeft_t0_stab.size()>5)
-        // {
-        //     cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t0_stab,  pointsRight_t0_stab,  points4D_t0_stab);
-        //     cv::convertPointsFromHomogeneous(points4D_t0_stab.t(), points3D_t0_stab);
-        //     trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0_stab, pointsLeft_t1_stab, points3D_t0_stab, rotation_stab, translation_stab, frame_skip, false);
-        //     cv::Mat temp_TLeft = (cv::Mat_<double>(2, 3) << 
-        //     rotation_stab.at<double>(0, 0), rotation_stab.at<double>(0, 1), rotation_stab.at<double>(0, 2),
-        //     rotation_stab.at<double>(1, 0), rotation_stab.at<double>(1, 1), rotation_stab.at<double>(1, 2));
-        //     //transforms[1] = TransformParam(-temp_TLeft.at<double>(0, 2)*compression, -temp_TLeft.at<double>(1, 2)*compression, -atan2(temp_TLeft.at<double>(1, 0), temp_TLeft.at<double>(0, 0)));
-        //     std::cout << "2 - TLeft = " << std::endl << temp_TLeft<< std::endl;
-        //     std::cout << "3 - rotation_stab = " << std::endl << rotation_stab << std::endl;
-        //     rotation_euler_stab = rotationMatrixToEulerAngles(rotation_stab);
-        //     rotation_euler_stab[0] = rotation_euler_stab[0];
-        //     rotation_euler_stab[1] = rotation_euler_stab[1];
-        //     std::cout << "4 - rotation_euler_stab = " << std::endl << rotation_euler_stab << std::endl;
-        // }
+        points3D_t0_stab.release();
+        points4D_t0_stab.release();
+        if (pointsLeft_t0_stab.size()>5)
+        {
+            cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t0_stab,  pointsRight_t0_stab,  points4D_t0_stab);
+            cv::convertPointsFromHomogeneous(points4D_t0_stab.t(), points3D_t0_stab);
+            trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0_stab, pointsLeft_t1_stab, points3D_t0_stab, rotation_stab, translation_stab, frame_skip, false);
+            cv::Mat temp_TLeft = (cv::Mat_<double>(2, 3) << 
+            rotation_stab.at<double>(0, 0), rotation_stab.at<double>(0, 1), rotation_stab.at<double>(0, 2),
+            rotation_stab.at<double>(1, 0), rotation_stab.at<double>(1, 1), rotation_stab.at<double>(1, 2));
+            cv::Mat intrinsic_matrix = (cv::Mat_<float>(3, 3) << projMatrl.at<float>(0, 0), projMatrl.at<float>(0, 1), projMatrl.at<float>(0, 2),
+                                            projMatrl.at<float>(1, 0), projMatrl.at<float>(1, 1), projMatrl.at<float>(1, 2),
+                                            projMatrl.at<float>(2, 0), projMatrl.at<float>(2, 1), projMatrl.at<float>(2, 2));
+
+            //cv::Mat temp_TLeft_0 = calculateAffineTransformAndPixelShift(rotation_stab, translation_stab, intrinsic_matrix, imageLeft_t1.size());
+
+            //transforms[1] = TransformParam(-temp_TLeft.at<double>(0, 2)*compression, -temp_TLeft.at<double>(1, 2)*compression, -atan2(temp_TLeft.at<double>(1, 0), temp_TLeft.at<double>(0, 0)));
+            std::cout << "2 - TLeft = " << std::endl << temp_TLeft << std::endl;
+            //std::cout << "2 - TLeft_0 = " << std::endl << temp_TLeft_0 << std::endl;
+            std::cout << "3 - rotation_stab = " << std::endl << rotation_stab << std::endl;
+            rotation_euler_stab = rotationMatrixToEulerAngles(rotation_stab);
+            std::cout << "4 - rotation_euler_stab = " << std::endl << rotation_euler_stab << std::endl;
+            std::cout << "5 - transform[1] = [" << transforms[1].dx << " " << transforms[1].dy<< " " << transforms[1].da << "]" << std::endl;
+
+
+
+        }
         //transforms[1] = TransformParam(-rotation_euler_stab[0]*fx*compression, -rotation_euler_stab[1]*fx*compression, -rotation_euler_stab[2]);
         
         iirAdaptiveHighPass(transforms, tauStab, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)

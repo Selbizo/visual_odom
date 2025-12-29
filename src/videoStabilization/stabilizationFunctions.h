@@ -131,3 +131,6 @@ TransformParam iirNoise(TransformParam &NewSample,vector<TransformParam>& x, vec
 
    return y[0];
 }
+
+cv::Mat calculateAffineTransformAndPixelShift(cv::Mat& rotation, cv::Mat& translation, 
+                                            cv::Mat& intrinsic_matrix, cv::Size image_size);
