@@ -64,4 +64,38 @@ void displayTracking(cv::Mat& imageLeft_t1,
                      std::vector<cv::Point2f>&  pointsLeft_t1,
                      std::string name);
 
+struct PoseGraphNode3D
+{
+    int frameId = -1;
+    cv::Mat pose = cv::Mat::eye(4, 4, CV_64F);
+    cv::Mat rotation = cv::Mat::eye(3, 3, CV_64F);
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+    double yaw = 0.0;
+};
+
+struct PoseGraphEdge3D
+{
+    int from = -1;
+    int to = -1;
+    double dx = 0.0;
+    double dy = 0.0;
+    double dz = 0.0;
+    double dyaw = 0.0;
+};
+
+bool optimizePoseGraph(std::vector<PoseGraphNode3D>& nodes,
+                       const std::vector<PoseGraphEdge3D>& edges,
+                       int iterations = 10);
+
+bool addKeyframeAndCheckLoop(const cv::Mat& imageGray,
+                             int frameId,
+                             const cv::Mat& projMatL,
+                             const cv::Mat& projMatR,
+                             const cv::Mat& worldPose,
+                             std::vector<Frame>& keyframes,
+                             cv::Mat& loopTransform,
+                             int& matchedFrameId);
+
 #endif

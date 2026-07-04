@@ -242,6 +242,280 @@ void trackingFrame2Frame(cv::Mat& projMatrl, cv::Mat& projMatrr,
 
 }
 
+namespace {
+
+double normalizeAngle(double angle)
+{
+    while (angle > CV_PI)
+    {
+        angle -= 2.0 * CV_PI;
+    }
+    while (angle < -CV_PI)
+    {
+        angle += 2.0 * CV_PI;
+    }
+    return angle;
+}
+
+cv::Mat makeRigidTransform(const cv::Mat& rotation, const cv::Mat& translation)
+{
+    cv::Mat rigidTransform = cv::Mat::eye(4, 4, CV_64F);
+    cv::Mat rotation64;
+    cv::Mat translation64;
+    rotation.convertTo(rotation64, CV_64F);
+    translation.convertTo(translation64, CV_64F);
+
+    rotation64.copyTo(rigidTransform(cv::Rect(0, 0, 3, 3)));
+    rigidTransform.at<double>(0, 3) = translation64.at<double>(0, 0);
+    rigidTransform.at<double>(1, 3) = translation64.at<double>(1, 0);
+    rigidTransform.at<double>(2, 3) = translation64.at<double>(2, 0);
+
+    return rigidTransform;
+}
+
+cv::Mat makePoseFromState(const PoseGraphNode3D& node)
+{
+    cv::Mat euler = (cv::Mat_<double>(3, 1) << 0.0, 0.0, node.yaw);
+    cv::Mat rotation = cv::Mat::eye(3, 3, CV_64F);
+    euler2rot(rotation, euler);
+
+    cv::Mat pose = cv::Mat::eye(4, 4, CV_64F);
+    rotation.copyTo(pose(cv::Rect(0, 0, 3, 3)));
+    pose.at<double>(0, 3) = node.x;
+    pose.at<double>(1, 3) = node.y;
+    pose.at<double>(2, 3) = node.z;
+    return pose;
+}
+
+} // namespace
+
+bool optimizePoseGraph(std::vector<PoseGraphNode3D>& nodes,
+                       const std::vector<PoseGraphEdge3D>& edges,
+                       int iterations)
+{
+    if (nodes.empty() || edges.empty())
+    {
+        return false;
+    }
+
+    for (int iter = 0; iter < iterations; ++iter)
+    {
+        bool changed = false;
+        for (const PoseGraphEdge3D& edge : edges)
+        {
+            if (edge.from < 0 || edge.to < 0 || edge.from >= static_cast<int>(nodes.size()) || edge.to >= static_cast<int>(nodes.size()))
+            {
+                continue;
+            }
+
+            PoseGraphNode3D& fromNode = nodes[edge.from];
+            PoseGraphNode3D& toNode = nodes[edge.to];
+
+            const double dx = (toNode.x - fromNode.x) - edge.dx;
+            const double dy = (toNode.y - fromNode.y) - edge.dy;
+            const double dz = (toNode.z - fromNode.z) - edge.dz;
+            const double dyaw = normalizeAngle((toNode.yaw - fromNode.yaw) - edge.dyaw);
+
+            if (std::abs(dx) > 1e-6 || std::abs(dy) > 1e-6 || std::abs(dz) > 1e-6 || std::abs(dyaw) > 1e-6)
+            {
+                changed = true;
+                toNode.x -= dx * 0.5;
+                toNode.y -= dy * 0.5;
+                toNode.z -= dz * 0.5;
+                toNode.yaw -= dyaw * 0.5;
+                toNode.yaw = normalizeAngle(toNode.yaw);
+            }
+        }
+
+        if (!changed)
+        {
+            break;
+        }
+    }
+
+    for (PoseGraphNode3D& node : nodes)
+    {
+        node.pose = makePoseFromState(node);
+    }
+
+    return true;
+}
+
+bool addKeyframeAndCheckLoop(const cv::Mat& imageGray,
+                             int frameId,
+                             const cv::Mat& projMatL,
+                             const cv::Mat& projMatR,
+                             const cv::Mat& worldPose,
+                             std::vector<Frame>& keyframes,
+                             cv::Mat& loopTransform,
+                             int& matchedFrameId)
+{
+    loopTransform = cv::Mat::eye(4, 4, CV_64F);
+    matchedFrameId = -1;
+
+    if (imageGray.empty())
+    {
+        return false;
+    }
+
+    cv::Ptr<cv::Feature2D> orb = cv::ORB::create(500);
+    std::vector<cv::KeyPoint> keypoints;
+    cv::Mat descriptors;
+    orb->detectAndCompute(imageGray, cv::noArray(), keypoints, descriptors);
+
+    if (keypoints.empty() || descriptors.empty())
+    {
+        return false;
+    }
+
+    Frame currentFrame(frameId, projMatL, projMatR, cv::Mat::eye(3, 3, CV_64F), cv::Mat::zeros(3, 1, CV_64F));
+    currentFrame.setImage(imageGray);
+    currentFrame.setKeypoints(keypoints);
+    currentFrame.setDescriptors(descriptors);
+    currentFrame.setPose(worldPose);
+
+    // Get current position from pose
+    double curX = worldPose.at<double>(0, 3);
+    double curY = worldPose.at<double>(1, 3);
+    double curZ = worldPose.at<double>(2, 3);
+
+    // Check if we should add this frame as a keyframe
+    // Only add if sufficiently far from the last keyframe
+    bool shouldAddAsKeyframe = false;
+    if (keyframes.empty())
+    {
+        shouldAddAsKeyframe = true;
+    }
+    else
+    {
+        Frame& lastKeyframe = keyframes.back();
+        double lastX = lastKeyframe.m_worldTranslation.at<double>(0, 0);
+        double lastY = lastKeyframe.m_worldTranslation.at<double>(1, 0);
+        double lastZ = lastKeyframe.m_worldTranslation.at<double>(2, 0);
+        double dist = std::sqrt(
+            std::pow(curX - lastX, 2) +
+            std::pow(curY - lastY, 2) +
+            std::pow(curZ - lastZ, 2));
+
+        // Add as keyframe only if moved at least 3 meters
+        if (dist > 3.0)
+        {
+            shouldAddAsKeyframe = true;
+        }
+    }
+
+    if (!shouldAddAsKeyframe)
+    {
+        return false;
+    }
+
+    // Now check for loop closure against existing keyframes
+    const double focal = projMatL.at<float>(0, 0);
+    const cv::Point2d principalPoint(projMatL.at<float>(0, 2), projMatL.at<float>(1, 2));
+
+    // Minimum frame gap to avoid detecting adjacent frames as loop
+    const int MIN_FRAME_GAP = 100;
+    // Minimum spatial distance in meters to avoid detecting nearby frames
+    const double MIN_SPATIAL_DISTANCE = 5.0;
+    // Minimum inlier count for loop detection
+    const int MIN_INLIERS = 50;
+    // Minimum match ratio for loop detection
+    const double MIN_MATCH_RATIO = 0.40;
+
+    double bestScore = 0.0;
+    int bestMatchedFrameId = -1;
+    cv::Mat bestLoopTransform = cv::Mat::eye(4, 4, CV_64F);
+
+    for (const Frame& previousFrame : keyframes)
+    {
+        if (previousFrame.m_descriptors.empty() || previousFrame.m_keypoints.empty())
+        {
+            continue;
+        }
+
+        // Check minimum frame gap
+        if (std::abs(frameId - previousFrame.m_frameId) < MIN_FRAME_GAP)
+        {
+            continue;
+        }
+
+        // Check minimum spatial distance
+        double prevX = previousFrame.m_worldTranslation.at<double>(0, 0);
+        double prevY = previousFrame.m_worldTranslation.at<double>(1, 0);
+        double prevZ = previousFrame.m_worldTranslation.at<double>(2, 0);
+        double spatialDist = std::sqrt(
+            std::pow(curX - prevX, 2) +
+            std::pow(curY - prevY, 2) +
+            std::pow(curZ - prevZ, 2));
+
+        if (spatialDist < MIN_SPATIAL_DISTANCE)
+        {
+            continue;
+        }
+
+        cv::BFMatcher matcher(cv::NORM_HAMMING);
+        std::vector<cv::DMatch> matches;
+        matcher.match(previousFrame.m_descriptors, descriptors, matches);
+
+        // Check match ratio
+        double matchRatio = static_cast<double>(matches.size()) / std::min(previousFrame.m_descriptors.rows, descriptors.rows);
+        if (matchRatio < MIN_MATCH_RATIO)
+        {
+            continue;
+        }
+
+        std::vector<cv::Point2f> prevPoints;
+        std::vector<cv::Point2f> currPoints;
+        prevPoints.reserve(matches.size());
+        currPoints.reserve(matches.size());
+
+        for (const cv::DMatch& match : matches)
+        {
+            prevPoints.push_back(previousFrame.m_keypoints[match.queryIdx].pt);
+            currPoints.push_back(keypoints[match.trainIdx].pt);
+        }
+
+        std::vector<uchar> mask;
+        cv::Mat essentialMatrix = cv::findEssentialMat(prevPoints, currPoints, focal, principalPoint, cv::RANSAC, 0.999, 1.0, mask);
+        cv::Mat rotation;
+        cv::Mat translation;
+        cv::recoverPose(essentialMatrix, prevPoints, currPoints, rotation, translation, focal, principalPoint, mask);
+
+        if (cv::norm(translation) < 0.01)
+        {
+            continue;
+        }
+
+        const int inlierCount = cv::countNonZero(mask);
+        if (inlierCount < MIN_INLIERS)
+        {
+            continue;
+        }
+
+        // Score based on inlier count and match ratio
+        double score = static_cast<double>(inlierCount) * matchRatio;
+        if (score > bestScore)
+        {
+            bestScore = score;
+            bestMatchedFrameId = previousFrame.m_frameId;
+            bestLoopTransform = makeRigidTransform(rotation, translation);
+        }
+    }
+
+    // Only accept if we found a good match
+    if (bestMatchedFrameId >= 0 && bestScore > 50.0)
+    {
+        loopTransform = bestLoopTransform;
+        matchedFrameId = bestMatchedFrameId;
+        keyframes.push_back(currentFrame);
+        return true;
+    }
+
+    // Add as regular keyframe
+    keyframes.push_back(currentFrame);
+    return false;
+}
+
 void displayTracking(cv::Mat& imageLeft_t1, 
                      std::vector<cv::Point2f>&  pointsLeft_t0,
                      std::vector<cv::Point2f>&  pointsLeft_t1,

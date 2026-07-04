@@ -381,7 +381,7 @@ void iirAdaptiveOld(vector<TransformParam>& transforms, double& tau_stab, Rect& 
 }
 
 
-void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab, Rect& roi, const int a, const int b, const double c, double& gain, vector<TransformParam>& movement, vector<TransformParam>& movementKalman)//, cv::KalmanFilter& KF)
+void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab,  double tau_stab_max, Rect& roi, const int a, const int b, const double c, double& gain, vector<TransformParam>& movement, vector<TransformParam>& movementKalman)//, cv::KalmanFilter& KF)
 {
 	if ((abs(transforms[1].dx) - 20.0 < 3.0 * transforms[3].dx) || (abs(transforms[1].dy) - 20.0 < 3.0 * transforms[3].dy) || (abs(transforms[1].da) - 10.0*DEG_TO_RAD < 3.0 * transforms[3].da)) //проверка на выброс в данных должна устраняться фильтром Калмана
 	{
@@ -403,24 +403,24 @@ void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab, R
 	if (transforms[0].da < -CV_PI)
 		transforms[0].da +=CV_PI;
 
-	if (tau_stab < 30.0)
+	if (tau_stab < tau_stab_max/4)
 		tau_stab *= 1.2;
 
-	if (tau_stab < 50.0 && !(abs(transforms[0].dx) > a / 2 || abs(transforms[0].dy) > b / 2))
+	if (tau_stab < tau_stab_max/2 && !(abs(transforms[0].dx) > a / 2 || abs(transforms[0].dy) > b / 2))
 		tau_stab *= 1.1;
 
-	if (tau_stab < 100.0 && !(abs(transforms[0].dx) > a / 3 || abs(transforms[0].dy) > b / 3))
+	if (tau_stab < tau_stab_max && !(abs(transforms[0].dx) > a / 3 || abs(transforms[0].dy) > b / 3))
 	{
 		tau_stab *= 1.1;
-		if (tau_stab > 100.0)
-			tau_stab = 100.0;
+		if (tau_stab > tau_stab_max)
+			tau_stab = tau_stab_max;
 	}
 
 
 	if (roi.x + (int)transforms[0].dx < 0)
 	{
 		transforms[0].dx = double(1 - roi.x);
-		if (tau_stab > 50) {
+		if (tau_stab > tau_stab_max/2) {
 			tau_stab *= 0.95;
 			gain *= 0.995;
 		}
@@ -428,7 +428,7 @@ void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab, R
 	else if (roi.x + roi.width + (int)transforms[0].dx >= a)
 	{
 		transforms[0].dx = (double)(a - roi.x - roi.width);
-		if (tau_stab > 50) {
+		if (tau_stab > tau_stab_max/2) {
 			tau_stab *= 0.95;
 			gain *= 0.99;
 		}
@@ -437,7 +437,7 @@ void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab, R
 	if (roi.y + (int)transforms[1].dy < 0)
 	{
 		transforms[0].dy = (double)(1 - roi.y);
-		if (tau_stab > 50) {
+		if (tau_stab > tau_stab_max/2) {
 			tau_stab *= 0.95;
 			gain *= 0.99;
 		}
@@ -445,7 +445,7 @@ void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab, R
 	else if (roi.y + roi.height + (int)transforms[0].dy >= b)
 	{
 		transforms[0].dy = (double)(b - roi.y - roi.height);
-		if (tau_stab > 50) {
+		if (tau_stab > tau_stab_max/2) {
 			tau_stab *= 0.95;
 			gain *= 0.99;
 		}

@@ -98,7 +98,7 @@ int main()
     cout << "Calibration Filepath: " << strSettingPath << endl;
 
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
-    int frame_skip = 1;
+    int frame_skip = 2;
     
     float fx = fSettings["Camera.fx"];
     float fy = fSettings["Camera.fy"];
@@ -198,7 +198,7 @@ int main()
 
 	cuda::GpuMat gStatusLeft, gErrLeft, gStatusRight, gErrRight;
 	
-	double tauStab = 20.0;
+	double tauStab = 5.0;
 	double gain = 0.7;
 	//double framePart = 0.95;
 
@@ -485,6 +485,11 @@ int main()
     cv::Vec3f rotation_euler;
     cv::Mat points3D_t0, points4D_t0;
     cv::Mat rigid_body_transformation;
+    std::vector<Frame> keyframes;
+    std::vector<PoseGraphNode3D> poseGraphNodes;
+    std::vector<PoseGraphEdge3D> poseGraphEdges;
+    cv::Mat loop_pose_correction = cv::Mat::eye(4, 4, CV_64F);
+    int last_added_node_index = -1;
     
     for (int frame_id = init_frame_id+1; frame_id < 50000; frame_id+=frame_skip)
     {
@@ -580,7 +585,8 @@ int main()
         }
         //transforms[1] = TransformParam(-rotation_euler_stab[0]*fx*compression, -rotation_euler_stab[1]*fx*compression, -rotation_euler_stab[2]);
         
-        iirAdaptiveHighPass(transforms, tauStab, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
+        // iirAdaptiveHighPass(transforms, tauStab, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
+        iirAdaptive(transforms, tauStab, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
         if (gain < 1.0)
         {
             gain *=1.05;
@@ -748,6 +754,71 @@ int main()
         } else {
             std::cout << "Too large rotation" << std::endl;
         }
+
+        PoseGraphNode3D currentNode;
+        currentNode.frameId = frame_id;
+        currentNode.pose = frame_pose.clone();
+        currentNode.rotation = rotation.clone();
+        currentNode.x = frame_pose.at<double>(0, 3);
+        currentNode.y = frame_pose.at<double>(1, 3);
+        currentNode.z = frame_pose.at<double>(2, 3);
+        cv::Vec3f currentEuler = rotationMatrixToEulerAngles(rotation);
+        currentNode.yaw = currentEuler[2];
+        if (!poseGraphNodes.empty())
+        {
+            PoseGraphNode3D& previousNode = poseGraphNodes.back();
+            cv::Mat deltaPose = previousNode.pose.inv() * currentNode.pose;
+            PoseGraphEdge3D odometryEdge;
+            odometryEdge.from = static_cast<int>(poseGraphNodes.size()) - 1;
+            odometryEdge.to = static_cast<int>(poseGraphNodes.size());
+            odometryEdge.dx = deltaPose.at<double>(0, 3);
+            odometryEdge.dy = deltaPose.at<double>(1, 3);
+            odometryEdge.dz = deltaPose.at<double>(2, 3);
+            cv::Mat deltaRotation = deltaPose(cv::Rect(0, 0, 3, 3));
+            cv::Mat deltaRotationCopy = deltaRotation.clone();
+            cv::Vec3f deltaEuler = rotationMatrixToEulerAngles(deltaRotationCopy);
+            odometryEdge.dyaw = deltaEuler[2];
+            poseGraphEdges.push_back(odometryEdge);
+        }
+        poseGraphNodes.push_back(currentNode);
+        last_added_node_index = static_cast<int>(poseGraphNodes.size()) - 1;
+
+        cv::Mat loop_transform = cv::Mat::eye(4, 4, CV_64F);
+        int matched_keyframe_id = -1;
+        if (frame_id % 10 == 0)
+        {
+            bool loop_detected = addKeyframeAndCheckLoop(imageLeft_t1, frame_id, projMatrl, projMatrr,
+                                                         frame_pose, keyframes, loop_transform, matched_keyframe_id);
+            if (loop_detected && matched_keyframe_id >= 0)
+            {
+                std::cout << "[LoopClosure] detected match with keyframe " << matched_keyframe_id << std::endl;
+                int matched_node_index = -1;
+                for (size_t i = 0; i < poseGraphNodes.size(); ++i)
+                {
+                    if (poseGraphNodes[i].frameId == matched_keyframe_id)
+                    {
+                        matched_node_index = static_cast<int>(i);
+                        break;
+                    }
+                }
+                if (matched_node_index >= 0 && last_added_node_index >= 0)
+                {
+                    PoseGraphEdge3D loopEdge;
+                    loopEdge.from = matched_node_index;
+                    loopEdge.to = last_added_node_index;
+                    loopEdge.dx = loop_transform.at<double>(0, 3);
+                    loopEdge.dy = loop_transform.at<double>(1, 3);
+                    loopEdge.dz = loop_transform.at<double>(2, 3);
+                    cv::Mat loopRotation = loop_transform(cv::Rect(0, 0, 3, 3));
+                    cv::Mat loopRotationCopy = loopRotation.clone();
+                    cv::Vec3f loopEuler = rotationMatrixToEulerAngles(loopRotationCopy);
+                    loopEdge.dyaw = loopEuler[2];
+                    poseGraphEdges.push_back(loopEdge);
+                    optimizePoseGraph(poseGraphNodes, poseGraphEdges, 10);
+                    frame_pose = poseGraphNodes[last_added_node_index].pose;
+                }
+            }
+        }
     
         t_b = clock();
         float frame_time = 1000*(double)(t_b-t_a)/CLOCKS_PER_SEC;
@@ -787,4 +858,3 @@ int main()
     }
     return 0;
 }
-
