@@ -650,87 +650,7 @@ int main()
             tauStab = p_tauStab;
             
             isTurning = (kalmanResult.mode == KalmanMotionComponents::MotionMode::TURNING);
-        } else {
-            // Старый код стабилизации (сохранён для совместимости)
-            matchingFeaturesStab( imageLeft_t0, imageRight_t0,
-                              imageLeft_t1, imageRight_t1, 
-                              currentVOFeatures_stab,
-                              pointsLeft_t0_stab, 
-                              pointsRight_t0_stab, 
-                              pointsLeft_t1_stab, 
-                              pointsRight_t1_stab,
-                              d_features,
-                              0.6);
-
-            cv::Mat tempImagForTest;
-            imageLeft_t1.copyTo(tempImagForTest);
-
-            getBiasAndRotation(pointsLeft_t0_stab, pointsLeft_t1_stab, dLeft, meanP0Left, transforms, TLeft, compression);
-                    
-            points3D_t0_stab.release();
-            points4D_t0_stab.release();
-            if (pointsLeft_t0_stab.size()>5)
-            {
-                cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t0_stab,  pointsRight_t0_stab,  points4D_t0_stab);
-                cv::convertPointsFromHomogeneous(points4D_t0_stab.t(), points3D_t0_stab);
-                trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0_stab, pointsLeft_t1_stab, points3D_t0_stab, rotation_stab, translation_stab, frame_skip, false);
-                cv::Mat temp_TLeft = (cv::Mat_<double>(2, 3) << 
-                rotation_stab.at<double>(0, 0), rotation_stab.at<double>(0, 1), rotation_stab.at<double>(0, 2),
-                rotation_stab.at<double>(1, 0), rotation_stab.at<double>(1, 1), rotation_stab.at<double>(1, 2));
-                cv::Mat intrinsic_matrix = (cv::Mat_<float>(3, 3) << projMatrl.at<float>(0, 0), projMatrl.at<float>(0, 1), projMatrl.at<float>(0, 2),
-                                                projMatrl.at<float>(1, 0), projMatrl.at<float>(1, 1), projMatrl.at<float>(1, 2),
-                                                projMatrl.at<float>(2, 0), projMatrl.at<float>(2, 1), projMatrl.at<float>(2, 2));
-
-                rotation_euler_stab = rotationMatrixToEulerAngles(rotation_stab);
-            }
-            
-            iirAdaptiveHighPass(transforms, tauStab, 50.0, roi, a, b, c, gain, movement, movementKalman);
-            if (gain < 1.0)
-            {
-                gain *=1.05;
-                gain+=0.01;
-            } 
-            if (gain > 1.0)
-            {
-                gain = 1.0;
-            }
-            
-            kalmanResult = kalmanSplitter.update(
-                transforms[1].dx, transforms[1].dy, transforms[1].da
-            );
-            
-            movementKalman[1].dx = kalmanResult.low_dx;
-            movementKalman[1].dy = kalmanResult.low_dy;
-            movementKalman[1].da = kalmanResult.low_da;
-            movementKalman[2].dx = kalmanResult.high_dx;
-            movementKalman[2].dy = kalmanResult.high_dy;
-            movementKalman[2].da = kalmanResult.high_da;
-
-            isTurning = (kalmanResult.mode == KalmanMotionComponents::MotionMode::TURNING);
-            
-            double stab_dx = kalmanResult.high_dx;
-            double stab_dy = kalmanResult.high_dy;
-            double stab_da = isTurning ? 0.0 : kalmanResult.high_da;
-            
-            transforms[0] = TransformParam(-stab_dx, -stab_dy, -stab_da);
-            transforms[0].getTransform(TStabLeft, a, b, c, atan_ba, framePart);
-            transforms[0].getTransformInvert(TStabInvLeft, a, b, c, atan_ba, framePart);
-
-            gFrameLeft.upload(imageLeft_t1);
-            gFrameRight.upload(imageRight_t1);
-
-            cuda::warpAffine(gFrameLeft,  gFrameStabilizedLeft,  TStabLeft, cv::Size(a, b));
-            cuda::warpAffine(gFrameRight, gFrameStabilizedRight, TStabLeft, cv::Size(a, b));
-
-            gFrameStabilizatedCropLeft = gFrameStabilizedLeft(roi);
-            gFrameStabilizatedCropRight = gFrameStabilizedRight(roi);
-
-            cv::cuda::resize(gFrameStabilizatedCropLeft, gWriterFrameToShowLeft, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
-            cv::cuda::resize(gFrameStabilizatedCropRight, gWriterFrameToShowRight, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
-            gWriterFrameToShowLeft.download(imageLeft_stab_t1);
-            gWriterFrameToShowRight.download(imageRight_stab_t1);
         }
-        // ========================================
         // Визуализация результатов стабилизации
         // ========================================
         {
@@ -758,13 +678,6 @@ int main()
                 modeColor = cv::Scalar(255, 255, 0);  // жёлтый = SHAKE_ONLY
             }
             cv::rectangle(imageLeft_t1_color, cv::Rect(10, 5, 250, 25), modeColor, -1);
-        }
-        
-        // Визуализация точек трекинга
-        if (!usePipeline) {
-            cv::Mat tempImagForTest;
-            imageLeft_t1.copyTo(tempImagForTest);
-            displayTracking(tempImagForTest, pointsLeft_t0_stab, pointsLeft_t1_stab, "1) test stab point area");
         }
         
         // ========================================
@@ -898,14 +811,7 @@ int main()
         matching_ms = 1000.0 * (double)(clock() - t_match_start) / CLOCKS_PER_SEC;
     }
 
-    // cv::Mat tempImage;
-    // cv::addWeighted(imageLeft_t1, 0.25, imageRight_t1, 0.25, 1.4, tempImage);
-
     displayTracking(imageLeft_stab_t1, pointsLeft_t0, pointsLeft_t1, "imageLeft_stab_t1"); //show input image
-
-    // displayTracking(imageRight_t1, pointsRight_t0, pointsRight_t1, "vis_right"); //show input image
-    // displayTracking(tempImage, pointsRight_t0, pointsLeft_t0, "vis_both"); //show input image
-
     // ------------------------------------------------
     // Integrating and display
     // ------------------------------------------------
