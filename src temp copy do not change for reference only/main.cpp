@@ -27,7 +27,6 @@
 #include "basicFunctions.h"
 #include "stabilizationFunctions.h"
 #include "kalmanSplitter.h"
-#include "VideoStabilizationPipeline.h"
 
 
 using namespace std;
@@ -70,6 +69,22 @@ int main()
     bool use_camera = false;
     std::vector<Matrix> pose_matrix_gt;
     
+    // if(argc == 4)
+    // {   display_ground_truth = true;
+    //     cerr << "Display ground truth trajectory" << endl;
+    //     // load ground truth pose
+    //     //string filename_pose = string(argv[3]); ///home/selbizo/CV/dataset/sequences/00/ ../calibration/kitti00.yaml
+    //     string filename_pose = string("/home/selbizo/CV/dataset/sequences/00/");
+    //     pose_matrix_gt = loadPoses(filename_pose);
+    // }
+
+    //string filename_pose = string("/home/selbizo/CV/dataset/sequences/00/");
+    //pose_matrix_gt = loadPoses(filename_pose);
+    // if(argc < 3)
+    // {
+    //     cerr << "Usage: ./run path_to_sequence(rgbd for using intel rgbd) path_to_calibration [optional]path_to_ground_truth_pose" << endl;
+    //     return 1;
+    // }
 
     // Sequence
     //string filepath = string(argv[1]);
@@ -112,11 +127,6 @@ int main()
     cv::Mat projMatrr = (cv::Mat_<float>(3, 4) << fx, 0., cx, bf, 0., fy, cy, 0., 0,  0., 1., 0.);
     cout << "P_left: " << endl << projMatrl << endl;
     cout << "P_right: " << endl << projMatrr << endl;
-
-    // ========================================
-    // Инициализация VideoStabilizationPipeline
-    // (будет выполнена после загрузки первого кадра, когда известны размеры)
-    // ========================================
 
     // -----------------------------------------
     // Initialize variables
@@ -323,29 +333,15 @@ int main()
     }
     imageLeft_t0.copyTo(imageLeft_stab_t0);
     imageRight_t0.copyTo(imageRight_stab_t0);
-
+    
     clock_t t_a, t_b;
 
     //init sizes of frames
+
 	const int a = imageLeft_t0.cols;
 	const int b = imageLeft_t0.rows;
 	const double c = sqrt(a * a + b * b);
 	const double atan_ba = atan2(b, a);
-
-    // ========================================
-    // VideoStabilizationPipeline — высокоуровневый контур стабилизации
-    // ========================================
-    VideoStabilizationPipeline stabPipeline;
-    bool usePipeline = true;  // переключатель: true = pipeline, false = старый код
-
-    // ========================================
-    // Инициализация VideoStabilizationPipeline
-    // ========================================
-    if (usePipeline) {
-        stabPipeline.init(fx, fy, cx, cy, bf, a, b, compression, framePart);
-        std::cout << "[Pipeline] Initialized with fx=" << fx << " fy=" << fy 
-                  << " cx=" << cx << " cy=" << cy << " bf=" << bf << std::endl;
-    }
 
     //переменные для запоминания кадров и характерных точек
 	Mat frameShowOrigLeft(a, b, CV_8UC3),
@@ -605,130 +601,61 @@ int main()
             pointsRight_t1_stab.clear();
         }
 
-        // ========================================
-        // VideoStabilizationPipeline — высокоуровневый интерфейс
-        // ========================================
-        StabilizationResult stabResult;
-        KalmanMotionComponents kalmanResult;
-        bool isTurning = false;
+        matchingFeaturesStab( imageLeft_t0, imageRight_t0,
+                          imageLeft_t1, imageRight_t1, 
+                          currentVOFeatures_stab,
+                          pointsLeft_t0_stab, 
+                          pointsRight_t0_stab, 
+                          pointsLeft_t1_stab, 
+                          pointsRight_t1_stab,
+                          d_features,
+                          0.6);
+
+        cv::Mat tempImagForTest;
+        imageLeft_t1.copyTo(tempImagForTest);
+
+        getBiasAndRotation(pointsLeft_t0_stab, pointsLeft_t1_stab, dLeft, meanP0Left, transforms, TLeft, compression); //перемещение между кадрами оценивается как первая производная
+        // std::cout << std::endl << "1 - TLeft = " << std::endl << TLeft<< std::endl;
+                
+        points3D_t0_stab.release();
+        points4D_t0_stab.release();
+        if (pointsLeft_t0_stab.size()>5)
+        {
+            cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t0_stab,  pointsRight_t0_stab,  points4D_t0_stab);
+            cv::convertPointsFromHomogeneous(points4D_t0_stab.t(), points3D_t0_stab);
+            trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0_stab, pointsLeft_t1_stab, points3D_t0_stab, rotation_stab, translation_stab, frame_skip, false);
+            cv::Mat temp_TLeft = (cv::Mat_<double>(2, 3) << 
+            rotation_stab.at<double>(0, 0), rotation_stab.at<double>(0, 1), rotation_stab.at<double>(0, 2),
+            rotation_stab.at<double>(1, 0), rotation_stab.at<double>(1, 1), rotation_stab.at<double>(1, 2));
+            cv::Mat intrinsic_matrix = (cv::Mat_<float>(3, 3) << projMatrl.at<float>(0, 0), projMatrl.at<float>(0, 1), projMatrl.at<float>(0, 2),
+                                            projMatrl.at<float>(1, 0), projMatrl.at<float>(1, 1), projMatrl.at<float>(1, 2),
+                                            projMatrl.at<float>(2, 0), projMatrl.at<float>(2, 1), projMatrl.at<float>(2, 2));
+
+            //cv::Mat temp_TLeft_0 = calculateAffineTransformAndPixelShift(rotation_stab, translation_stab, intrinsic_matrix, imageLeft_t1.size());
+
+            //transforms[1] = TransformParam(-temp_TLeft.at<double>(0, 2)*compression, -temp_TLeft.at<double>(1, 2)*compression, -atan2(temp_TLeft.at<double>(1, 0), temp_TLeft.at<double>(0, 0)));
+            // std::cout << "2 - TLeft = " << std::endl << temp_TLeft << std::endl;
+            //std::cout << "2 - TLeft_0 = " << std::endl << temp_TLeft_0 << std::endl;
+            // std::cout << "3 - rotation_stab = " << std::endl << rotation_stab << std::endl;
+            rotation_euler_stab = rotationMatrixToEulerAngles(rotation_stab);
+            // std::cout << "4 - rotation_euler_stab = " << std::endl << rotation_euler_stab << std::endl;
+            // std::cout << "5 - transform[1] = [" << transforms[1].dx << " " << transforms[1].dy<< " " << transforms[1].da << "]" << std::endl;
+
+
+
+        }
+        //transforms[1] = TransformParam(-rotation_euler_stab[0]*fx*compression, -rotation_euler_stab[1]*fx*compression, -rotation_euler_stab[2]);
         
-        if (usePipeline) {
-            // Высокоуровневый вызов — один метод вместо ~160 строк
-            stabResult = stabPipeline.processFrame(imageLeft_t1, imageRight_t1);
-            
-            // Получаем kalmanResult из pipeline
-            auto debugInfo = stabPipeline.getDebugInfo();
-            kalmanResult.low_dx = debugInfo.low_dx;
-            kalmanResult.low_dy = debugInfo.low_dy;
-            kalmanResult.low_da = debugInfo.low_da;
-            kalmanResult.high_dx = debugInfo.high_dx;
-            kalmanResult.high_dy = debugInfo.high_dy;
-            kalmanResult.high_da = debugInfo.high_da;
-            kalmanResult.mode = debugInfo.mode;
-            kalmanResult.confidence = 1.0 - debugInfo.innovationNorm / 50.0;
-            kalmanResult.confidence = std::max(0.0, std::min(1.0, kalmanResult.confidence));
-            
-            // Копируем результаты
-            stabResult.stabilizedLeft.copyTo(imageLeft_stab_t1);
-            stabResult.stabilizedRight.copyTo(imageRight_stab_t1);
-            stabResult.TStabLeft.copyTo(TStabLeft);
-            stabResult.TStabInvLeft.copyTo(TStabInvLeft);
-            
-            // Обновляем transforms для обратной совместимости
-            std::vector<TransformParam> p_transforms(3, TransformParam(0, 0, 0));
-            std::vector<TransformParam> p_movementKalman(3, TransformParam(0, 0, 0));
-            p_transforms[0] = TransformParam(stabResult.movementHigh.dx, stabResult.movementHigh.dy, stabResult.movementHigh.da);
-            p_transforms[1] = TransformParam(debugInfo.meas_dx, debugInfo.meas_dy, debugInfo.meas_da);
-            p_movementKalman[1] = TransformParam(debugInfo.low_dx, debugInfo.low_dy, debugInfo.low_da);
-            p_movementKalman[2] = TransformParam(debugInfo.high_dx, debugInfo.high_dy, debugInfo.high_da);
-            
-            // Используем локальные переменные для showServiceInfo
-            double p_gain = stabPipeline.getGain();
-            double p_tauStab = stabPipeline.getTauStab();
-            
-            gain = p_gain;
-            tauStab = p_tauStab;
-            
-            isTurning = (kalmanResult.mode == KalmanMotionComponents::MotionMode::TURNING);
-        } else {
-            // Старый код стабилизации (сохранён для совместимости)
-            matchingFeaturesStab( imageLeft_t0, imageRight_t0,
-                              imageLeft_t1, imageRight_t1, 
-                              currentVOFeatures_stab,
-                              pointsLeft_t0_stab, 
-                              pointsRight_t0_stab, 
-                              pointsLeft_t1_stab, 
-                              pointsRight_t1_stab,
-                              d_features,
-                              0.6);
-
-            cv::Mat tempImagForTest;
-            imageLeft_t1.copyTo(tempImagForTest);
-
-            getBiasAndRotation(pointsLeft_t0_stab, pointsLeft_t1_stab, dLeft, meanP0Left, transforms, TLeft, compression);
-                    
-            points3D_t0_stab.release();
-            points4D_t0_stab.release();
-            if (pointsLeft_t0_stab.size()>5)
-            {
-                cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t0_stab,  pointsRight_t0_stab,  points4D_t0_stab);
-                cv::convertPointsFromHomogeneous(points4D_t0_stab.t(), points3D_t0_stab);
-                trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0_stab, pointsLeft_t1_stab, points3D_t0_stab, rotation_stab, translation_stab, frame_skip, false);
-                cv::Mat temp_TLeft = (cv::Mat_<double>(2, 3) << 
-                rotation_stab.at<double>(0, 0), rotation_stab.at<double>(0, 1), rotation_stab.at<double>(0, 2),
-                rotation_stab.at<double>(1, 0), rotation_stab.at<double>(1, 1), rotation_stab.at<double>(1, 2));
-                cv::Mat intrinsic_matrix = (cv::Mat_<float>(3, 3) << projMatrl.at<float>(0, 0), projMatrl.at<float>(0, 1), projMatrl.at<float>(0, 2),
-                                                projMatrl.at<float>(1, 0), projMatrl.at<float>(1, 1), projMatrl.at<float>(1, 2),
-                                                projMatrl.at<float>(2, 0), projMatrl.at<float>(2, 1), projMatrl.at<float>(2, 2));
-
-                rotation_euler_stab = rotationMatrixToEulerAngles(rotation_stab);
-            }
-            
-            iirAdaptiveHighPass(transforms, tauStab, 50.0, roi, a, b, c, gain, movement, movementKalman);
-            if (gain < 1.0)
-            {
-                gain *=1.05;
-                gain+=0.01;
-            } 
-            if (gain > 1.0)
-            {
-                gain = 1.0;
-            }
-            
-            kalmanResult = kalmanSplitter.update(
-                transforms[1].dx, transforms[1].dy, transforms[1].da
-            );
-            
-            movementKalman[1].dx = kalmanResult.low_dx;
-            movementKalman[1].dy = kalmanResult.low_dy;
-            movementKalman[1].da = kalmanResult.low_da;
-            movementKalman[2].dx = kalmanResult.high_dx;
-            movementKalman[2].dy = kalmanResult.high_dy;
-            movementKalman[2].da = kalmanResult.high_da;
-
-            isTurning = (kalmanResult.mode == KalmanMotionComponents::MotionMode::TURNING);
-            
-            double stab_dx = kalmanResult.high_dx;
-            double stab_dy = kalmanResult.high_dy;
-            double stab_da = isTurning ? 0.0 : kalmanResult.high_da;
-            
-            transforms[0] = TransformParam(-stab_dx, -stab_dy, -stab_da);
-            transforms[0].getTransform(TStabLeft, a, b, c, atan_ba, framePart);
-            transforms[0].getTransformInvert(TStabInvLeft, a, b, c, atan_ba, framePart);
-
-            gFrameLeft.upload(imageLeft_t1);
-            gFrameRight.upload(imageRight_t1);
-
-            cuda::warpAffine(gFrameLeft,  gFrameStabilizedLeft,  TStabLeft, cv::Size(a, b));
-            cuda::warpAffine(gFrameRight, gFrameStabilizedRight, TStabLeft, cv::Size(a, b));
-
-            gFrameStabilizatedCropLeft = gFrameStabilizedLeft(roi);
-            gFrameStabilizatedCropRight = gFrameStabilizedRight(roi);
-
-            cv::cuda::resize(gFrameStabilizatedCropLeft, gWriterFrameToShowLeft, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
-            cv::cuda::resize(gFrameStabilizatedCropRight, gWriterFrameToShowRight, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
-            gWriterFrameToShowLeft.download(imageLeft_stab_t1);
-            gWriterFrameToShowRight.download(imageRight_stab_t1);
+        iirAdaptiveHighPass(transforms, tauStab, 50.0, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
+        //iirAdaptive(transforms, tauStab, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
+        if (gain < 1.0)
+        {
+            gain *=1.05;
+            gain+=0.01;
+        } 
+        if (gain > 1.0)
+        {
+            gain = 1.0;
         }
         // ========================================
         // Визуализация результатов стабилизации
@@ -760,40 +687,89 @@ int main()
             cv::rectangle(imageLeft_t1_color, cv::Rect(10, 5, 250, 25), modeColor, -1);
         }
         
-        // Визуализация точек трекинга
-        if (!usePipeline) {
-            cv::Mat tempImagForTest;
-            imageLeft_t1.copyTo(tempImagForTest);
-            displayTracking(tempImagForTest, pointsLeft_t0_stab, pointsLeft_t1_stab, "1) test stab point area");
-        }
-        
+        displayTracking(tempImagForTest, pointsLeft_t0_stab, pointsLeft_t1_stab, "1) test stab point area");
+
         // ========================================
-        // Адаптивный выбор кадров для VO
+        // KalmanSplitter: разделение motion на low-freq (VO) и high-freq (stab)
         // ========================================
-        bool useStabForVO = !isTurning && kalmanResult.confidence > 0.3;
-        
-        // Для pipeline — imageLeft_stab_t1 уже установлен выше
-        if (usePipeline) {
-            // Вызываем showServiceInfo с pipeline-данными
-            std::vector<TransformParam> p_transforms(3, TransformParam(0, 0, 0));
-            std::vector<TransformParam> p_movementKalman(3, TransformParam(0, 0, 0));
-            p_transforms[0] = TransformParam(stabResult.movementHigh.dx, stabResult.movementHigh.dy, stabResult.movementHigh.da);
-            p_transforms[1] = TransformParam(kalmanResult.high_dx, kalmanResult.high_dy, kalmanResult.high_da);
-            p_movementKalman[1] = TransformParam(kalmanResult.low_dx, kalmanResult.low_dy, kalmanResult.low_da);
-            p_movementKalman[2] = TransformParam(kalmanResult.high_dx, kalmanResult.high_dy, kalmanResult.high_da);
-            
-            double p_gain = std::max(0.7, std::min(1.0, 1.0 - kalmanResult.innovationNorm / 50.0));
-            double p_tauStab = 5.0;
-            
-            showServiceInfoSmall(imageLeft_t1_color, 1.0, 1.0, true, true, true, 
-                p_transforms, p_movementKalman, p_tauStab, p_gain, framePart, 
-                static_cast<int>(stabResult.featuresFound ? 500 : 0), 1, 1.0, 1.0, 1.0, 
-                a, b, textOrg, textOrgOrig, textOrgCrop, textOrgStab, fontFace, fontScale, colorGREEN);
+        {
+            clock_t t_kalman_start = clock();
+            kalmanResult = kalmanSplitter.update(
+                transforms[1].dx,
+                transforms[1].dy,
+                transforms[1].da
+            );
+            double t_kalman = 1000.0 * (double)(clock() - t_kalman_start) / CLOCKS_PER_SEC;
+            LOG_TIMING("kalman_splitter", t_kalman);
         }
+
+        // Заполняем movementKalman для обратной совместимости
+    movementKalman[1].dx = kalmanResult.low_dx;
+    movementKalman[1].dy = kalmanResult.low_dy;
+    movementKalman[1].da = kalmanResult.low_da;
+
+    movementKalman[2].dx = kalmanResult.high_dx;
+    movementKalman[2].dy = kalmanResult.high_dy;
+    movementKalman[2].da = kalmanResult.high_da;
+
+    // ========================================
+    // Адаптивная стабилизация
+    // ========================================
+    isTurning = (kalmanResult.mode == KalmanMotionComponents::MotionMode::TURNING);
     
-    clock_t t_match_start = clock();
+    double stab_dx = kalmanResult.high_dx;
+    double stab_dy = kalmanResult.high_dy;
+    double stab_da = isTurning ? 0.0 : kalmanResult.high_da;
+    
+    transforms[0] = TransformParam(-stab_dx, -stab_dy, -stab_da);
+
+    transforms[0].getTransform(TStabLeft, a, b, c, atan_ba, framePart);
+    transforms[0].getTransformInvert(TStabInvLeft, a, b, c, atan_ba, framePart);
+    
+    // cout << "transforms[1]" << transforms[1].dx << " : " << transforms[1].dy << " : " << transforms[1].da << endl;
+    // cout << "transforms[0]" << transforms[0].dx << " : " << transforms[0].dy << " : " << transforms[0].da << endl;
+    // cout << "noiseOut[0]" << noiseOut[0].dx << " : " << noiseOut[0].dy << " : " << noiseOut[0].da << endl;
+    // cout << "TStabLeft" <<TStabLeft.at<double>(0, 2) << " : " << TStabLeft.at<double>(1, 2) <<endl;
+
+    gFrameLeft.upload(imageLeft_t1);
+    gFrameRight.upload(imageRight_t1);
+
+    cuda::warpAffine(gFrameLeft,  gFrameStabilizedLeft,  TStabLeft, cv::Size(a, b)); //8ms
+    cuda::warpAffine(gFrameRight, gFrameStabilizedRight, TStabLeft, cv::Size(a, b)); //8ms
+
+    gFrameStabilizatedCropLeft = gFrameStabilizedLeft(roi);
+    gFrameStabilizatedCropRight = gFrameStabilizedRight(roi);
+
+    //cuda::resize(gFrameStabilizatedCropLeft, gImageLeft_t0, cv::Size(a,b));
+    cv::cuda::resize(gFrameStabilizatedCropLeft, gWriterFrameToShowLeft, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
+    cv::cuda::resize(gFrameStabilizatedCropRight, gWriterFrameToShowRight, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
+    gWriterFrameToShowLeft.download(imageLeft_stab_t1);
+    gWriterFrameToShowRight.download(imageRight_stab_t1);
+    showServiceInfoSmall(imageLeft_t1_color, 1.0, 1.0, true, true, true, transforms, movementKalman, tauStab, gain, framePart, pointsLeft_t0_stab.max_size(), 1, 1.0, 1.0, 1.0, a, b, textOrg, textOrgOrig, textOrgCrop, textOrgStab, fontFace, fontScale, colorGREEN);
+ 
+    t_a = clock();
+
+    //oldPointsLeft_t0 = currentVOFeatures.points;
+    
+    pointsLeft_t0.clear();
+    pointsRight_t0.clear();
+    pointsLeft_t1.clear();
+    pointsRight_t1.clear();
+    
+    // ========================================
+    // БЕНЧМАРК: замер времени matchingFeaturesStab
+    // ========================================
+    clock_t t_matchingStab_start = clock();
+    
+    // ========================================
+    // Адаптивный выбор кадров для VO:
+    // При повороте — используем нестабилизированные кадры (сохраняем поворот)
+    // При прямой/тряске — используем стабилизированные (убираем тряску)
+    // ========================================
+    bool useStabForVO = !isTurning && kalmanResult.confidence > 0.3;
+    
     {
-        t_match_start = clock();
+        clock_t t_match_start = clock();
         matchingFeatures(
             useStabForVO ? imageLeft_stab_t0 : imageLeft_t0,
             useStabForVO ? imageRight_stab_t0 : imageRight_t0,
@@ -808,12 +784,17 @@ int main()
         double t_match = 1000.0 * (double)(clock() - t_match_start) / CLOCKS_PER_SEC;
         LOG_TIMING("matching_features", t_match);
     }
-    double matching_ms = 1000.0 * (double)(clock() - t_match_start) / CLOCKS_PER_SEC;
+    
+    clock_t t_matchingStab_end = clock();
+    double matchingStab_ms = 1000.0 * (double)(t_matchingStab_end - t_matchingStab_start) / CLOCKS_PER_SEC;
+    
+    // БЕНЧМАРК: замер общего времени matching
+    clock_t t_matching_total_start = t_matchingStab_start;
     
     // Инициализация таймингов для бенчмарка
+    double matching_ms = 0.0;
     double triangulate_ms = 0.0;
     double tracking_ms = 0.0;
-    double matchingStab_ms = 0.0;
     
     imageLeft_t1.copyTo(imageLeft_t0);
     imageRight_t1.copyTo(imageRight_t0);
@@ -895,7 +876,7 @@ int main()
         last_valid_translation = translation.clone();
         
         // Сохраняем тайминги для бенчмарка
-        matching_ms = 1000.0 * (double)(clock() - t_match_start) / CLOCKS_PER_SEC;
+        matching_ms = 1000.0 * (double)(clock() - t_matching_total_start) / CLOCKS_PER_SEC;
     }
 
     // cv::Mat tempImage;

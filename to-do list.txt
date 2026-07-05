@@ -1,0 +1,24 @@
+TODO-лист: Рефакторинг контура стабилизации
+Контекст
+Сейчас весь контур стабилизации размазан по циклу for (frame_id) в main.cpp (~200+ строк на кадр):
+
+matchingFeaturesStab → getBiasAndRotation → iirAdaptiveHighPass → KalmanSplitter::update → вычисление TStabLeft → cuda::warpAffine → crop/resize → download
+Задачи
+#	Задача	Описание
+1	Создать VideoStabilizationPipeline.h/cpp	Новый высокоуровневый класс, инкапсулирующий весь контур стабилизации: инициализацию GPU-ресурсов, обработку каждого кадра, финализацию
+2	Вынести инициализацию в конструктор	Переместить создание KalmanSplitter, CUDA-детекторов (d_features, d_pyrLK_sparse), GpuMat-буферов, матриц KALMAN (kf), ROI, масок — всё в конструктор VideoStabilizationPipeline
+3	Написать processFrame()	Однострочный интерфейс: pipeline.processFrame(leftGray, rightGray) → возвращает стабилизированный кадр + метаданные (энергия тряски, режим, тайминг)
+4	Предусмотреть setEnabled(bool)	Метод включения/выключения стабилизации. При enabled=false processFrame() просто возвращает входной кадр без обработки (zero-copy)
+5	Предусмотреть setMode(KalmanMotionComponents::MotionMode)	Ручной override режима KalmanSplitter (для тестирования/отладки)
+6	Упростить цикл в main.cpp	Заменить ~200 строк стабилизации на 3-5 строк: result = pipeline.processFrame(left, right) + проверка result.enabled
+7	Разделить возвращаемые данные	Создать struct StabilizationResult { Mat stabilizedLeft, stabilizedRight; KalmanMotionComponents::MotionMode mode; double shakeEnergy; bool enabled; }
+8	Обновить CMakeLists.txt	Добавить videoStabilization/VideoStabilizationPipeline.cpp в сборку (или создать новый target)
+Предлагаемая структура нового класса
+VideoStabilizationPipeline
+├── Конструктор: инициализация KalmanSplitter, CUDA-ресурсов, буферов
+├── processFrame(left, right) → StabilizationResult   // основной интерфейс
+├── setEnabled(bool)
+├── setMode(MotionMode)
+├── getDebugInfo() → KalmanSplitter::DebugInfo
+└── reset()
+Проверь TODO-лист, скажи что добавить/изменить/удалить, и я приступлю к реализации.

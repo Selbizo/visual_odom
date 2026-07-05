@@ -79,13 +79,6 @@ public:
     };
     DebugInfo getDebugInfo() const;
 
-    /** Получить текущий режим движения */
-    KalmanMotionComponents::MotionMode getMode() const { return currentMode_; }
-
-    /** Получить/установить override режима */
-    KalmanMotionComponents::MotionMode getModeOverride() const { return modeOverride_; }
-    void setModeOverride(KalmanMotionComponents::MotionMode mode) { modeOverride_ = mode; }
-
 private:
     // ---- Translation filter ----
     // state: [px, py, vx, vy, ax, ay] (6x1)
@@ -140,8 +133,4 @@ private:
     double shakeThreshold_ = 3.0;       // пикселей std для тряски
     double historySize_ = 30;           // окно для статистики
     vector<double> highEnergyHistory_;  // история high-freq энергии
-
-    // ---- Текущий режим и override ----
-    KalmanMotionComponents::MotionMode currentMode_ = KalmanMotionComponents::MotionMode::UNKNOWN;
-    KalmanMotionComponents::MotionMode modeOverride_ = KalmanMotionComponents::MotionMode::UNKNOWN;
 };

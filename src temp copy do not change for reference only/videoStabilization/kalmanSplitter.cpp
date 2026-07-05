@@ -163,12 +163,6 @@ KalmanMotionComponents KalmanSplitter::update(double meas_dx, double meas_dy, do
                                     result.high_dx, result.high_dy, result.high_da,
                                     result.vyaw);
 
-    // Применяем override если установлен
-    if (modeOverride_ != KalmanMotionComponents::MotionMode::UNKNOWN) {
-        result.mode = modeOverride_;
-    }
-    currentMode_ = result.mode;
-
     result.confidence = std::max(0.0, std::min(1.0, 1.0 - innovNormTrans_ / 50.0));
 
     // ---- Шаг 7: История для детекции тряски ----
