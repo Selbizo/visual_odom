@@ -63,18 +63,20 @@ void checkValidMatch(std::vector<cv::Point2f>& points, std::vector<cv::Point2f>&
 
 void removeInvalidPoints(std::vector<cv::Point2f>& points, const std::vector<bool>& status)
 {
-    int index = 0;
-    for (int i = 0; i < status.size(); i++)
+    // ИСПРАВЛЕНИЕ: используем reserve + swap вместо O(n^2) erase в цикле
+    int n = points.size();
+    std::vector<cv::Point2f> valid_points;
+    valid_points.reserve(n);
+    
+    for (int i = 0; i < n; i++)
     {
-        if (status[i] == false)
+        if (status[i])
         {
-            points.erase(points.begin() + index);
-        }
-        else
-        {
-            index ++;
+            valid_points.push_back(points[i]);
         }
     }
+    
+    points.swap(valid_points);
 }
 
 
@@ -142,11 +144,18 @@ void matchingFeaturesStab(cv::Mat& imageLeft_t0, cv::Mat& imageRight_t0,
     // ----------------------------
     std::vector<cv::Point2f>  pointsLeftReturn_t0;   // feature points to check cicular mathcing validation
 
-    if (currentVOFeatures.size() < 1000)
+    // ИСПРАВЛЕНИЕ: ограничиваем максимальный размер feature set
+    // Если features > 2000, очищаем периферийные и добавляем только если < 1500
+    if (currentVOFeatures.size() > 2000) {
+        // Слишком много features — очищаем и начинаем заново
+        currentVOFeatures.clear();
+    }
+    
+    if (currentVOFeatures.size() < 1500)
     {
         // append new features with old features
         appendNewFeatures(d_features, imageLeft_t0, currentVOFeatures);   
-        // std::cout << "Current feature set size: " << currentVOFeatures.points.size() << std::endl;
+        // std::cout << "Current feature set size: " << currentVOFeatures.size() << std::endl;
     }
 
     // --------------------------------------------------------

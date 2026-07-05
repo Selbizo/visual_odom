@@ -40,7 +40,7 @@ message(STATUS "Project source dir: ${PROJECT_SOURCE_DIR}")
 
 # ---- Main executable ----
 add_executable(run main.cpp)
-target_link_libraries(run ${OpenCV_LIBS} bucket feature utils visualOdometry Frame rgbd_standalone basicFunctions stabilizationFunctions wienerFilter)
+target_link_libraries(run ${OpenCV_LIBS} bucket feature utils visualOdometry Frame rgbd_standalone basicFunctions stabilizationFunctions wienerFilter kalmanSplitter)
 
 
 # add_subdirectory(videoStabilization)

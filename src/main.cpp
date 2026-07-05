@@ -25,6 +25,7 @@
 
 #include "basicFunctions.h"
 #include "stabilizationFunctions.h"
+#include "kalmanSplitter.h"
 
 
 using namespace std;
@@ -94,11 +95,17 @@ int main()
 
     // Camera calibration
     //string strSettingPath = string(argv[2]);
-    string strSettingPath = string("../calibration/kitti00.yaml");
+    // Use absolute path to avoid working directory issues
+    string strSettingPath = string("/home/selbizo/CV/StabAndSLAM/visual_odom/calibration/kitti00.yaml");
     cout << "Calibration Filepath: " << strSettingPath << endl;
 
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
-    int frame_skip = 2;
+    if (!fSettings.isOpened())
+    {
+        cerr << "ERROR: Failed to open calibration file: " << strSettingPath << endl;
+        return 1;
+    }
+    int frame_skip = 1;
     
     float fx = fSettings["Camera.fx"];
     float fy = fSettings["Camera.fy"];
@@ -435,6 +442,19 @@ int main()
 	Ptr<cuda::DFT> forwardDFTRight = cuda::createDFT(cv::Size(a, b), DFT_SCALE | DFT_COMPLEX_INPUT);
 	Ptr<cuda::DFT> inverseDFTRight = cuda::createDFT(cv::Size(a, b), DFT_INVERSE | DFT_COMPLEX_INPUT);
 
+    // ========================================
+    // KalmanSplitter: разделение motion на low-freq (VO) и high-freq (stab)
+    // ========================================
+    KalmanSplitter kalmanSplitter;
+    
+    // Переменные для логирования
+    int logFrameInterval = 30;
+    std::ofstream kalmanLogFile;
+    kalmanLogFile.open("/home/selbizo/CV/StabAndSLAM/visual_odom/src/OutputResults/KalmanSplitterLog.csv");
+    if (kalmanLogFile.is_open()) {
+        kalmanLogFile << "frame\tmode\tinnov_norm\tq_trans\tq_rot\tr_trans\tr_rot\thigh_energy\tlow_dx\tlow_dy\tlow_da" << std::endl;
+    }
+
     //------------------------------------------
     // First frame VidStab
     //------------------------------------------
@@ -491,6 +511,17 @@ int main()
     cv::Mat loop_pose_correction = cv::Mat::eye(4, 4, CV_64F);
     int last_added_node_index = -1;
     
+    // KalmanSplitter результат для текущего кадра
+    KalmanMotionComponents kalmanResult;
+    bool isTurning = false;
+    
+    // Бенчмарк-лог (вне цикла)
+    std::ofstream perfLog;
+    perfLog.open("/home/selbizo/CV/StabAndSLAM/visual_odom/src/OutputResults/PerformanceLog.csv");
+    if (perfLog.is_open()) {
+        perfLog << "frame_id,features_size,matching_stab_ms,matching_ms,triangulate_ms,tracking_ms,total_ms,fps\n";
+    }
+    
     for (int frame_id = init_frame_id+1; frame_id < 50000; frame_id+=frame_skip)
     {
         imageRight_t1.release();
@@ -518,7 +549,7 @@ int main()
             frame_skip = 1;
         if (frame_id > 13000 && frame_skip > 0)
             frame_skip = -1;
-        noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake))*0.0 + MaxShake*sin(frame_id*DEG_TO_RAD*40.0);
+        noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake))*0.1 + MaxShake*sin(frame_id*DEG_TO_RAD*40.0);
         //noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake))*0.0 + MaxShake*cos(frame_id*DEG_TO_RAD*20.0);
         //noiseIn.da = (double)(rng.uniform(-sqrt(MaxShake)/1000, sqrt(MaxShake)/1000)) + 3.0*sqrt(MaxShake)/1000*sin(frame_id*DEG_TO_RAD*10.0);
 
@@ -554,7 +585,7 @@ int main()
         imageLeft_t1.copyTo(tempImagForTest);
 
         getBiasAndRotation(pointsLeft_t0_stab, pointsLeft_t1_stab, dLeft, meanP0Left, transforms, TLeft, compression); //перемещение между кадрами оценивается как первая производная
-        std::cout << std::endl << "1 - TLeft = " << std::endl << TLeft<< std::endl;
+        // std::cout << std::endl << "1 - TLeft = " << std::endl << TLeft<< std::endl;
                 
         points3D_t0_stab.release();
         points4D_t0_stab.release();
@@ -573,20 +604,20 @@ int main()
             //cv::Mat temp_TLeft_0 = calculateAffineTransformAndPixelShift(rotation_stab, translation_stab, intrinsic_matrix, imageLeft_t1.size());
 
             //transforms[1] = TransformParam(-temp_TLeft.at<double>(0, 2)*compression, -temp_TLeft.at<double>(1, 2)*compression, -atan2(temp_TLeft.at<double>(1, 0), temp_TLeft.at<double>(0, 0)));
-            std::cout << "2 - TLeft = " << std::endl << temp_TLeft << std::endl;
+            // std::cout << "2 - TLeft = " << std::endl << temp_TLeft << std::endl;
             //std::cout << "2 - TLeft_0 = " << std::endl << temp_TLeft_0 << std::endl;
-            std::cout << "3 - rotation_stab = " << std::endl << rotation_stab << std::endl;
+            // std::cout << "3 - rotation_stab = " << std::endl << rotation_stab << std::endl;
             rotation_euler_stab = rotationMatrixToEulerAngles(rotation_stab);
-            std::cout << "4 - rotation_euler_stab = " << std::endl << rotation_euler_stab << std::endl;
-            std::cout << "5 - transform[1] = [" << transforms[1].dx << " " << transforms[1].dy<< " " << transforms[1].da << "]" << std::endl;
+            // std::cout << "4 - rotation_euler_stab = " << std::endl << rotation_euler_stab << std::endl;
+            // std::cout << "5 - transform[1] = [" << transforms[1].dx << " " << transforms[1].dy<< " " << transforms[1].da << "]" << std::endl;
 
 
 
         }
         //transforms[1] = TransformParam(-rotation_euler_stab[0]*fx*compression, -rotation_euler_stab[1]*fx*compression, -rotation_euler_stab[2]);
         
-        // iirAdaptiveHighPass(transforms, tauStab, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
-        iirAdaptive(transforms, tauStab, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
+        iirAdaptiveHighPass(transforms, tauStab, 50.0, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
+        //iirAdaptive(transforms, tauStab, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
         if (gain < 1.0)
         {
             gain *=1.05;
@@ -596,159 +627,232 @@ int main()
         {
             gain = 1.0;
         }
-        //showServiceInfoSmall(tempImagForTest, 1.0, 1.0, true, true, true, transforms, movementKalman, tauStab, gain, framePart, pointsLeft_t0_stab.max_size(), 1, 1.0, 1.0, 1.0, a, b, textOrg, textOrgOrig, textOrgCrop, textOrgStab, fontFace, fontScale, colorBLACK);
+        // ========================================
+        // Визуализация результатов стабилизации
+        // ========================================
+        {
+            double shakeEnergy = kalmanResult.high_dx * kalmanResult.high_dx + kalmanResult.high_dy * kalmanResult.high_dy;
+            double totalEnergy = kalmanResult.low_dx * kalmanResult.low_dx + kalmanResult.low_dy * kalmanResult.low_dy + shakeEnergy;
+            double stabPercent = totalEnergy > 0.01 ? (1.0 - shakeEnergy / totalEnergy) * 100.0 : 0.0;
+            stabPercent = std::max(0.0, std::min(100.0, stabPercent));
+            
+            const char* modeStr[] = {"UNKNOWN", "TURNING", "STRAIGHT", "SHAKE_ONLY"};
+            
+            char infoLine[256];
+            snprintf(infoLine, sizeof(infoLine), 
+                "Stab: %5.1f%% | Mode: %s | Shake: %5.1f px | Low: %5.1f px",
+                stabPercent, modeStr[static_cast<int>(kalmanResult.mode)],
+                std::sqrt(shakeEnergy), std::sqrt(kalmanResult.low_dx * kalmanResult.low_dx + kalmanResult.low_dy * kalmanResult.low_dy));
+            
+            cv::putText(imageLeft_t1_color, infoLine, cv::Point(10, 30), 
+                       cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
+            
+            // Индикатор режима цветом
+            cv::Scalar modeColor = cv::Scalar(0, 255, 0);  // зелёный = STRAIGHT
+            if (kalmanResult.mode == KalmanMotionComponents::MotionMode::TURNING) {
+                modeColor = cv::Scalar(0, 0, 255);  // красный = TURNING
+            } else if (kalmanResult.mode == KalmanMotionComponents::MotionMode::SHAKE_ONLY) {
+                modeColor = cv::Scalar(255, 255, 0);  // жёлтый = SHAKE_ONLY
+            }
+            cv::rectangle(imageLeft_t1_color, cv::Rect(10, 5, 250, 25), modeColor, -1);
+        }
         
         displayTracking(tempImagForTest, pointsLeft_t0_stab, pointsLeft_t1_stab, "1) test stab point area");
 
-        //kf.update((cv::Mat_<double>(3, 1) << transforms[1].dx, transforms[1].dy, transforms[1].da));
-        kf.update((cv::Mat_<double>(3, 1) << 0.0, 0.0, 0.0));
+        // ========================================
+        // KalmanSplitter: разделение motion на low-freq (VO) и high-freq (stab)
+        // ========================================
+        kalmanResult = kalmanSplitter.update(
+            transforms[1].dx,
+            transforms[1].dy,
+            transforms[1].da
+        );
 
-        cv::Mat state = kf.state();
-        
-        movementKalman[1].dx = state.at<double>(0, 0); //скорость
-        movementKalman[1].dy = state.at<double>(1, 0); //скорость
-        movementKalman[1].da = state.at<double>(6, 0); //скорость
+        // Заполняем movementKalman для обратной совместимости
+    movementKalman[1].dx = kalmanResult.low_dx;
+    movementKalman[1].dy = kalmanResult.low_dy;
+    movementKalman[1].da = kalmanResult.low_da;
 
-        movementKalman[2].dx = state.at<double>(2, 0); //ускорение
-        movementKalman[2].dy = state.at<double>(3, 0); //ускорение
-        movementKalman[2].da = state.at<double>(7, 0); //ускорение
+    movementKalman[2].dx = kalmanResult.high_dx;
+    movementKalman[2].dy = kalmanResult.high_dy;
+    movementKalman[2].da = kalmanResult.high_da;
 
-        movementKalman[3].dx = state.at<double>(4, 0); //вторая производная ускорения
-        movementKalman[3].dy = state.at<double>(5, 0); //вторая производная ускорения
-        movementKalman[3].da = state.at<double>(8, 0); //вторая производная ускорения
+    // ========================================
+    // Адаптивная стабилизация
+    // ========================================
+    isTurning = (kalmanResult.mode == KalmanMotionComponents::MotionMode::TURNING);
+    
+    double stab_dx = kalmanResult.high_dx;
+    double stab_dy = kalmanResult.high_dy;
+    double stab_da = isTurning ? 0.0 : kalmanResult.high_da;
+    
+    transforms[0] = TransformParam(-stab_dx, -stab_dy, -stab_da);
 
-        transforms[0].getTransform(TStabLeft, a, b, c, atan_ba, framePart); // получение текущего компенсирующего преобразования
-        transforms[0].getTransformInvert(TStabInvLeft, a, b, c, atan_ba, framePart); // получение текущего обратного компенсирующего преобразования для отрисовки маски
-        
-        // cout << "transforms[1]" << transforms[1].dx << " : " << transforms[1].dy << " : " << transforms[1].da << endl;
-        // cout << "transforms[0]" << transforms[0].dx << " : " << transforms[0].dy << " : " << transforms[0].da << endl;
-        // cout << "noiseOut[0]" << noiseOut[0].dx << " : " << noiseOut[0].dy << " : " << noiseOut[0].da << endl;
-        // cout << "TStabLeft" <<TStabLeft.at<double>(0, 2) << " : " << TStabLeft.at<double>(1, 2) <<endl;
+    transforms[0].getTransform(TStabLeft, a, b, c, atan_ba, framePart);
+    transforms[0].getTransformInvert(TStabInvLeft, a, b, c, atan_ba, framePart);
+    
+    // cout << "transforms[1]" << transforms[1].dx << " : " << transforms[1].dy << " : " << transforms[1].da << endl;
+    // cout << "transforms[0]" << transforms[0].dx << " : " << transforms[0].dy << " : " << transforms[0].da << endl;
+    // cout << "noiseOut[0]" << noiseOut[0].dx << " : " << noiseOut[0].dy << " : " << noiseOut[0].da << endl;
+    // cout << "TStabLeft" <<TStabLeft.at<double>(0, 2) << " : " << TStabLeft.at<double>(1, 2) <<endl;
 
-        gFrameLeft.upload(imageLeft_t1);
-        gFrameRight.upload(imageRight_t1);
+    gFrameLeft.upload(imageLeft_t1);
+    gFrameRight.upload(imageRight_t1);
 
-        cuda::warpAffine(gFrameLeft,  gFrameStabilizedLeft,  TStabLeft, cv::Size(a, b)); //8ms
-        cuda::warpAffine(gFrameRight, gFrameStabilizedRight, TStabLeft, cv::Size(a, b)); //8ms
+    cuda::warpAffine(gFrameLeft,  gFrameStabilizedLeft,  TStabLeft, cv::Size(a, b)); //8ms
+    cuda::warpAffine(gFrameRight, gFrameStabilizedRight, TStabLeft, cv::Size(a, b)); //8ms
 
-        gFrameStabilizatedCropLeft = gFrameStabilizedLeft(roi);
-        gFrameStabilizatedCropRight = gFrameStabilizedRight(roi);
+    gFrameStabilizatedCropLeft = gFrameStabilizedLeft(roi);
+    gFrameStabilizatedCropRight = gFrameStabilizedRight(roi);
 
-        //cuda::resize(gFrameStabilizatedCropLeft, gImageLeft_t0, cv::Size(a,b));
-        cv::cuda::resize(gFrameStabilizatedCropLeft, gWriterFrameToShowLeft, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
-        cv::cuda::resize(gFrameStabilizatedCropRight, gWriterFrameToShowRight, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
-        gWriterFrameToShowLeft.download(imageLeft_stab_t1);
-        gWriterFrameToShowRight.download(imageRight_stab_t1);
-        showServiceInfoSmall(imageLeft_t1_color, 1.0, 1.0, true, true, true, transforms, movementKalman, tauStab, gain, framePart, pointsLeft_t0_stab.max_size(), 1, 1.0, 1.0, 1.0, a, b, textOrg, textOrgOrig, textOrgCrop, textOrgStab, fontFace, fontScale, colorGREEN);
-        
-        imshow("imageLeft_t1_color", imageLeft_t1_color);
-        //imshow("imageLeft_stab_t0", imageLeft_stab_t0);
+    //cuda::resize(gFrameStabilizatedCropLeft, gImageLeft_t0, cv::Size(a,b));
+    cv::cuda::resize(gFrameStabilizatedCropLeft, gWriterFrameToShowLeft, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
+    cv::cuda::resize(gFrameStabilizatedCropRight, gWriterFrameToShowRight, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
+    gWriterFrameToShowLeft.download(imageLeft_stab_t1);
+    gWriterFrameToShowRight.download(imageRight_stab_t1);
+    showServiceInfoSmall(imageLeft_t1_color, 1.0, 1.0, true, true, true, transforms, movementKalman, tauStab, gain, framePart, pointsLeft_t0_stab.max_size(), 1, 1.0, 1.0, 1.0, a, b, textOrg, textOrgOrig, textOrgCrop, textOrgStab, fontFace, fontScale, colorGREEN);
+    
+    imshow("imageLeft_t1_color", imageLeft_t1_color);
+    //imshow("imageLeft_stab_t0", imageLeft_stab_t0);
 
-        t_a = clock();
+    t_a = clock();
 
-        //oldPointsLeft_t0 = currentVOFeatures.points;
+    //oldPointsLeft_t0 = currentVOFeatures.points;
+    
+    pointsLeft_t0.clear();
+    pointsRight_t0.clear();
+    pointsLeft_t1.clear();
+    pointsRight_t1.clear();
+    
+    // ========================================
+    // БЕНЧМАРК: замер времени matchingFeaturesStab
+    // ========================================
+    clock_t t_matchingStab_start = clock();
+    
+    // ========================================
+    // Адаптивный выбор кадров для VO:
+    // При повороте — используем нестабилизированные кадры (сохраняем поворот)
+    // При прямой/тряске — используем стабилизированные (убираем тряску)
+    // ========================================
+    bool useStabForVO = !isTurning && kalmanResult.confidence > 0.3;
+    
+    matchingFeatures(
+        useStabForVO ? imageLeft_stab_t0 : imageLeft_t0,
+        useStabForVO ? imageRight_stab_t0 : imageRight_t0,
+        useStabForVO ? imageLeft_stab_t1 : imageLeft_t1,
+        useStabForVO ? imageRight_stab_t1 : imageRight_t1,
+        currentVOFeatures,
+        pointsLeft_t0, 
+        pointsRight_t0, 
+        pointsLeft_t1, 
+        pointsRight_t1,
+        1.0);
+    
+    clock_t t_matchingStab_end = clock();
+    double matchingStab_ms = 1000.0 * (double)(t_matchingStab_end - t_matchingStab_start) / CLOCKS_PER_SEC;
+    
+    // БЕНЧМАРК: замер общего времени matching
+    clock_t t_matching_total_start = t_matchingStab_start;
+    
+    // Инициализация таймингов для бенчмарка
+    double matching_ms = 0.0;
+    double triangulate_ms = 0.0;
+    double tracking_ms = 0.0;
+    
+    imageLeft_t1.copyTo(imageLeft_t0);
+    imageRight_t1.copyTo(imageRight_t0);
 
-        pointsLeft_t0.clear();
-        pointsRight_t0.clear();
-        pointsLeft_t1.clear();
-        pointsRight_t1.clear();
-        
-        matchingFeatures( gain > 0.5 ? imageLeft_stab_t0 : imageLeft_t0, gain > 0.5 ? imageRight_stab_t0 : imageRight_t0,
-                          gain > 0.5 ? imageLeft_stab_t1 : imageLeft_t1, gain > 0.5 ? imageRight_stab_t1 : imageRight_t1,
-                          currentVOFeatures,
-                          pointsLeft_t0, 
-                          pointsRight_t0, 
-                          pointsLeft_t1, 
-                          pointsRight_t1,
-                          1.0); //не доворачивает повороты
+    imageLeft_stab_t1.copyTo(imageLeft_stab_t0);
+    imageRight_stab_t1.copyTo(imageRight_stab_t0);
 
-        imageLeft_t1.copyTo(imageLeft_t0);
-        imageRight_t1.copyTo(imageRight_t0);
-
-        imageLeft_stab_t1.copyTo(imageLeft_stab_t0);
-        imageRight_stab_t1.copyTo(imageRight_stab_t0);
-
-        // Проверяем количество найденных точек
-        if (pointsLeft_t0.size() < 30 || pointsLeft_t1.size() < 30) {
-            if (!use_interpolation && pointsLeft_t0.size() >= 15) {
-                // Сохраняем последние валидные параметры движения перед началом интерполяции
-                last_valid_rotation = rotation.clone();
-                last_valid_translation = translation.clone();
-                use_interpolation = true;
-                interpolation_frames = 0;
-            }
-        
-            if (use_interpolation) {
-                // Используем линейную интерполяцию
-                if (interpolation_frames < max_interpolation_frames) {
-                    double alpha = (double)(interpolation_frames + 1) / (max_interpolation_frames + 1);
-                    interpolated_rotation = last_valid_rotation * (1.0 - alpha) + rotation * alpha;
-                    interpolated_translation = last_valid_translation * (1.0 - alpha) + translation * alpha;
-                    
-                    // Используем интерполированные значения
-                    rotation = interpolated_rotation.clone();
-                    translation = interpolated_translation.clone();
-                    interpolation_frames++;
-                    
-                    std::cout << "[Info] Using interpolation, frames: " << interpolation_frames 
-                              << ", points found: " << pointsLeft_t0.size() << std::endl;
-                } else {
-                   // Сбрасываем интерполяцию если слишком долго не находим точки
-                    use_interpolation = false;
-                    std::cout << "[Warning] Interpolation timeout, resetting..." << std::endl;
-                }
-            } else {
-                // Пропускаем кадр если точек слишком мало и интерполяция не активна
-                std::cout << "[Warning] Too few points (" << pointsLeft_t0.size() 
-                          << "), skipping frame..." << std::endl;
-                continue;
-            }
-        } else {
-            // Достаточно точек - нормальная обработка
-            if (use_interpolation) {
-                use_interpolation = false;
-                std::cout << "[Info] Enough points found, stopping interpolation" << std::endl;
-            }
-        
-
-            // ---------------------
-            // Triangulate 3D Points
-            // ---------------------
-            points3D_t0.release();
-            points4D_t0.release();
-            cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t0,  pointsRight_t0,  points4D_t0);
-            cv::convertPointsFromHomogeneous(points4D_t0.t(), points3D_t0);
-
-            // ---------------------
-            // Tracking transformation
-            // ---------------------
-            clock_t tic_gpu = clock();
-            trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0, pointsLeft_t1, 
-                           points3D_t0, rotation, translation, frame_skip, false);
-            clock_t toc_gpu = clock();
-        
-            // Сохраняем валидные параметры движения
+    // Проверяем количество найденных точек
+    if (pointsLeft_t0.size() < 30 || pointsLeft_t1.size() < 30) {
+        if (!use_interpolation && pointsLeft_t0.size() >= 15) {
+            // Сохраняем последние валидные параметры движения перед началом интерполяции
             last_valid_rotation = rotation.clone();
             last_valid_translation = translation.clone();
+            use_interpolation = true;
+            interpolation_frames = 0;
         }
+    
+        if (use_interpolation) {
+            // Используем линейную интерполяцию
+            if (interpolation_frames < max_interpolation_frames) {
+                double alpha = (double)(interpolation_frames + 1) / (max_interpolation_frames + 1);
+                interpolated_rotation = last_valid_rotation * (1.0 - alpha) + rotation * alpha;
+                interpolated_translation = last_valid_translation * (1.0 - alpha) + translation * alpha;
+                
+                // Используем интерполированные значения
+                rotation = interpolated_rotation.clone();
+                translation = interpolated_translation.clone();
+                interpolation_frames++;
+                
+                std::cout << "[Info] Using interpolation, frames: " << interpolation_frames 
+                          << ", points found: " << pointsLeft_t0.size() << std::endl;
+            } else {
+               // Сбрасываем интерполяцию если слишком долго не находим точки
+                use_interpolation = false;
+                std::cout << "[Warning] Interpolation timeout, resetting..." << std::endl;
+            }
+        } else {
+            // Пропускаем кадр если точек слишком мало и интерполяция не активна
+            std::cout << "[Warning] Too few points (" << pointsLeft_t0.size() 
+                      << "), skipping frame..." << std::endl;
+            continue;
+        }
+    } else {
+        // Достаточно точек - нормальная обработка
+        if (use_interpolation) {
+            use_interpolation = false;
+            std::cout << "[Info] Enough points found, stopping interpolation" << std::endl;
+        }
+    
 
-        // cv::Mat tempImage;
-        // cv::addWeighted(imageLeft_t1, 0.25, imageRight_t1, 0.25, 1.4, tempImage);
+        // ---------------------
+        // Triangulate 3D Points
+        // ---------------------
+        clock_t t_triang_start = clock();
+        points3D_t0.release();
+        points4D_t0.release();
+        cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t0,  pointsRight_t0,  points4D_t0);
+        cv::convertPointsFromHomogeneous(points4D_t0.t(), points3D_t0);
+        clock_t t_triang_end = clock();
+        double triangulate_ms = 1000.0 * (double)(t_triang_end - t_triang_start) / CLOCKS_PER_SEC;
 
-        displayTracking(imageLeft_stab_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
+        // ---------------------
+        // Tracking transformation
+        // ---------------------
+        clock_t tic_gpu = clock();
+        trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0, pointsLeft_t1, 
+                       points3D_t0, rotation, translation, frame_skip, false);
+        clock_t toc_gpu = clock();
+        double tracking_ms = 1000.0 * (double)(toc_gpu - tic_gpu) / CLOCKS_PER_SEC;
+    
+        // Сохраняем валидные параметры движения
+        last_valid_rotation = rotation.clone();
+        last_valid_translation = translation.clone();
+        
+        // Сохраняем тайминги для бенчмарка
+        double matching_ms = 1000.0 * (double)(clock() - t_matching_total_start) / CLOCKS_PER_SEC;
+    }
 
-        // displayTracking(imageRight_t1, pointsRight_t0, pointsRight_t1, "vis_right"); //show input image
-        // displayTracking(tempImage, pointsRight_t0, pointsLeft_t0, "vis_both"); //show input image
+    // cv::Mat tempImage;
+    // cv::addWeighted(imageLeft_t1, 0.25, imageRight_t1, 0.25, 1.4, tempImage);
 
-        // ------------------------------------------------
-        // Integrating and display
-        // ------------------------------------------------
-        rotation_euler = rotationMatrixToEulerAngles(rotation);
+    displayTracking(imageLeft_stab_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
 
-        rigid_body_transformation.release();
+    // displayTracking(imageRight_t1, pointsRight_t0, pointsRight_t1, "vis_right"); //show input image
+    // displayTracking(tempImage, pointsRight_t0, pointsLeft_t0, "vis_both"); //show input image
 
-        if(abs(rotation_euler[1])<0.4*MaxShake*abs(frame_skip) && abs(rotation_euler[0])<0.4*MaxShake*abs(frame_skip) && abs(rotation_euler[2])<0.4*MaxShake*abs(frame_skip))
-        {
+    // ------------------------------------------------
+    // Integrating and display
+    // ------------------------------------------------
+    rotation_euler = rotationMatrixToEulerAngles(rotation);
+
+    rigid_body_transformation.release();
+
+    if(abs(rotation_euler[1])<0.4*MaxShake*abs(frame_skip) && abs(rotation_euler[0])<0.4*MaxShake*abs(frame_skip) && abs(rotation_euler[2])<0.4*MaxShake*abs(frame_skip))
+    {
             integrateOdometryStereo(frame_id, rigid_body_transformation, frame_pose, 
                                rotation, translation);
         } else {
@@ -824,6 +928,20 @@ int main()
         float frame_time = 1000*(double)(t_b-t_a)/CLOCKS_PER_SEC;
         float fps = 1000/frame_time;
 
+        // ========================================
+        // БЕНЧМАРК: запись в лог (каждый кадр)
+        // ========================================
+        if (perfLog.is_open() && matching_ms > 0) {
+            perfLog << frame_id << ","
+                    << currentVOFeatures.size() << ","
+                    << matchingStab_ms << ","
+                    << matching_ms << ","
+                    << triangulate_ms << ","
+                    << tracking_ms << ","
+                    << frame_time << ","
+                    << fps << std::endl;
+        }
+
         cv::Mat xyz = frame_pose.col(3).clone();
         display(frame_id, trajectory, trajectory_biased, xyz, pose_matrix_gt, fps, display_ground_truth);
 
@@ -856,5 +974,12 @@ int main()
             break;
         }
     }
+    
+    // Закрытие бенчмарк-лога
+    if (perfLog.is_open()) {
+        perfLog.close();
+        std::cout << "Performance log saved to: /home/selbizo/CV/StabAndSLAM/visual_odom/src/OutputResults/PerformanceLog.csv" << std::endl;
+    }
+    
     return 0;
 }

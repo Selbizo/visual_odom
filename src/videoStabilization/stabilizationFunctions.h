@@ -73,7 +73,7 @@ void removeFramePoints(vector<Point2f>& p0, double minDistance);
 void iirAdaptiveOld(vector<TransformParam>& transforms, double& tau_stab, 
 	Rect& roi, const int a, const int b, const double c, double& gain);
 
-void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab, 
+void iirAdaptiveHighPass(vector<TransformParam>& transforms, double& tau_stab,  double tau_stab_max,
 	Rect& roi, const int a, const int b, const double c, double& gain, 
 	vector<TransformParam>& movement, vector<TransformParam>& movementKalman);
 

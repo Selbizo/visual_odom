@@ -20,20 +20,22 @@ static void download(const cv::cuda::GpuMat& d_mat, std::vector<uchar>& vec)
 void deleteUnmatchFeatures(std::vector<cv::Point2f>& points0, std::vector<cv::Point2f>& points1, std::vector<uchar>& status)
 {
   //getting rid of points for which the KLT tracking failed or those who have gone outside the frame
-  int indexCorrection = 0;
-  for( int i=0; i<status.size(); i++)
-     {  cv::Point2f pt = points1.at(i- indexCorrection);
-        if ((status.at(i) == 0)||(pt.x<0)||(pt.y<0))   
-        {
-              if((pt.x<0)||(pt.y<0))    
-              {
-                status.at(i) = 0;
-              }
-              points0.erase (points0.begin() + (i - indexCorrection));
-              points1.erase (points1.begin() + (i - indexCorrection));
-              indexCorrection++;
-        }
-     }
+  // ИСПРАВЛЕНИЕ: используем erase-remove идиому вместо O(n^2) erase в цикле
+  int n = status.size();
+  std::vector<cv::Point2f> new_points0, new_points1;
+  new_points0.reserve(n);
+  new_points1.reserve(n);
+  
+  for(int i = 0; i < n; i++) {
+      cv::Point2f pt = points1[i];
+      if (status[i] != 0 && pt.x >= 0 && pt.y >= 0) {
+          new_points0.push_back(points0[i]);
+          new_points1.push_back(points1[i]);
+      }
+  }
+  
+  points0.swap(new_points0);
+  points1.swap(new_points1);
 }
 
 void featureDetectionFast(cv::Mat image, std::vector<cv::Point2f>& points)  
@@ -211,59 +213,83 @@ void bucketingFeatures(cv::Mat& image, FeatureSet& current_features, int bucket_
 // features_per_bucket: number of selected features per bucket
     int image_height = image.rows;
     int image_width = image.cols;
-    int buckets_nums_height = image_height/bucket_size;
-    int buckets_nums_width = image_width/bucket_size;
-    int buckets_number = buckets_nums_height * buckets_nums_width;
+    
+    // Защита от деления на ноль
+    if (bucket_size <= 0 || image_height <= 0 || image_width <= 0)
+        return;
+    
+    int buckets_nums_height = image_height / bucket_size;
+    int buckets_nums_width = image_width / bucket_size;
+    
+    // Защита от переполнения
+    if (buckets_nums_height <= 0 || buckets_nums_width <= 0)
+        return;
+    
+    // ИСПРАВЛЕНИЕ: используем flat arrays вместо vector<Bucket> — убираем аллокацию ~400 объектов
+    // Храним точки и ages в bucket-ах напрямую
+    // Количество bucket'ов: (buckets_nums_height + 1) * (buckets_nums_width + 1)
+    // т.к. индексы идут от 0 до buckets_nums_height включительно
+    int num_buckets_h = buckets_nums_height + 1;
+    int num_buckets_w = buckets_nums_width + 1;
+    int buckets_number = num_buckets_h * num_buckets_w;
 
-    std::vector<Bucket> Buckets;
-
-    // initialize all the buckets
-    for (int buckets_idx_height = 0; buckets_idx_height <= buckets_nums_height; buckets_idx_height++)
-    {
-      for (int buckets_idx_width = 0; buckets_idx_width <= buckets_nums_width; buckets_idx_width++)
-      {
-        Buckets.push_back(Bucket(features_per_bucket));
-      }
-    }
+    std::vector<cv::Point2f> bucket_points;
+    std::vector<int> bucket_ages;
+    bucket_points.resize(buckets_number * features_per_bucket);
+    bucket_ages.resize(buckets_number * features_per_bucket, -1);
+    std::vector<int> bucket_counts(buckets_number, 0);
 
     // bucket all current features into buckets by their location
     int buckets_nums_height_idx, buckets_nums_width_idx, buckets_idx;
-    for (int i = 0; i < current_features.points.size(); ++i)
+    for (int i = 0; i < (int)current_features.points.size(); ++i)
     {
-      buckets_nums_height_idx = current_features.points[i].y/bucket_size;
-      buckets_nums_width_idx = current_features.points[i].x/bucket_size;
-      buckets_idx = buckets_nums_height_idx*buckets_nums_width + buckets_nums_width_idx;
-      Buckets[buckets_idx].add_feature(current_features.points[i], current_features.ages[i]);
-
-    }
-
-    // get features back from buckets
-    current_features.clear();
-    int nn = 20;
-
-    for (int buckets_idx_height = buckets_nums_height/nn; buckets_idx_height <= buckets_nums_height*(nn-1)/nn; buckets_idx_height++)
-    {
-      for (int buckets_idx_width = buckets_nums_width/nn; buckets_idx_width <= buckets_nums_width*(nn-1)/nn; buckets_idx_width++)
-      {
-        if ((buckets_idx_width > buckets_nums_width*(1.0 - crop)/2 && buckets_idx_width < buckets_nums_width*(1.0 + crop)/2 && 
-              buckets_idx_height > buckets_nums_height*(1.0 - crop)/2 && buckets_idx_height < buckets_nums_height*(1.0 + crop)/2))
-        {
-           buckets_idx = buckets_idx_height*buckets_nums_width + buckets_idx_width;
-           Buckets[buckets_idx].get_features(current_features);
-        } 
+      buckets_nums_height_idx = current_features.points[i].y / bucket_size;
+      buckets_nums_width_idx = current_features.points[i].x / bucket_size;
+      
+      // Clamp to valid range [0, num_buckets_h/w - 1]
+      if (buckets_nums_height_idx < 0) buckets_nums_height_idx = 0;
+      if (buckets_nums_height_idx >= num_buckets_h) buckets_nums_height_idx = num_buckets_h - 1;
+      if (buckets_nums_width_idx < 0) buckets_nums_width_idx = 0;
+      if (buckets_nums_width_idx >= num_buckets_w) buckets_nums_width_idx = num_buckets_w - 1;
+      
+      buckets_idx = buckets_nums_height_idx * num_buckets_w + buckets_nums_width_idx;
+      
+      int count = bucket_counts[buckets_idx];
+      if (count < features_per_bucket) {
+          bucket_points[buckets_idx * features_per_bucket + count] = current_features.points[i];
+          bucket_ages[buckets_idx * features_per_bucket + count] = current_features.ages[i];
+          bucket_counts[buckets_idx]++;
       }
     }
 
-    // for (int buckets_idx_height = 0; buckets_idx_height <= buckets_nums_height; buckets_idx_height++)
-    // {
-    //   for (int buckets_idx_width = 0; buckets_idx_width <= buckets_nums_width; buckets_idx_width++)
-    //   {
-    //        buckets_idx = buckets_idx_height*buckets_nums_width + buckets_idx_width;
-    //        Buckets[buckets_idx].get_features(current_features);    
-    //   }
-    // }
+    // get features back from buckets
+    current_features.points.clear();
+    current_features.ages.clear();
+    current_features.points.reserve(buckets_number * features_per_bucket);
+    current_features.ages.reserve(buckets_number * features_per_bucket);
+    
+    int nn = 20;
+    int start_h = buckets_nums_height / nn;
+    int start_w = buckets_nums_width / nn;
+    int end_h = buckets_nums_height * (nn - 1) / nn;
+    int end_w = buckets_nums_width * (nn - 1) / nn;
 
-    // std::cout << "current features number after bucketing: " << current_features.size() << std::endl;
+    for (int buckets_idx_height = start_h; buckets_idx_height <= end_h; buckets_idx_height++)
+    {
+      for (int buckets_idx_width = start_w; buckets_idx_width <= end_w; buckets_idx_width++)
+      {
+        if ((buckets_idx_width > buckets_nums_width * (1.0 - crop) / 2 && buckets_idx_width < buckets_nums_width * (1.0 + crop) / 2 && 
+              buckets_idx_height > buckets_nums_height * (1.0 - crop) / 2 && buckets_idx_height < buckets_nums_height * (1.0 + crop) / 2))
+        {
+           buckets_idx = buckets_idx_height * num_buckets_w + buckets_idx_width;
+           int count = bucket_counts[buckets_idx];
+           for (int j = 0; j < count; j++) {
+               current_features.points.push_back(bucket_points[buckets_idx * features_per_bucket + j]);
+               current_features.ages.push_back(bucket_ages[buckets_idx * features_per_bucket + j]);
+           }
+        } 
+      }
+    }
 }
 
 void appendNewFeatures(cv::Mat& image, FeatureSet& current_features)
