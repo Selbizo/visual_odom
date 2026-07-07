@@ -76,38 +76,7 @@ int main()
     if(filepath == "rgbd") use_intel_rgbd = true;
     if(filepath == "camera") use_camera = true;
 
-    // Camera calibration
-    // Use absolute path to avoid working directory issues
-    string strSettingPath = string("/home/selbizo/CV/StabAndSLAM/visual_odom/calibration/kitti00.yaml");
-    cout << "Calibration Filepath: " << strSettingPath << endl;
 
-    cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
-    if (!fSettings.isOpened())
-    {
-        cerr << "ERROR: Failed to open calibration file: " << strSettingPath << endl;
-        return 1;
-    }
-    int frame_skip = 1;
-    
-    float fx = fSettings["Camera.fx"];
-    float fy = fSettings["Camera.fy"];
-    float cx = fSettings["Camera.cx"];
-    float cy = fSettings["Camera.cy"];
-    float bf = fSettings["Camera.bf"];
-
-
-    double MaxShake = 2.0;
-    double framePart = 0.94;
-    fx = fx/framePart;
-    fy = fy/framePart;
-    cx = cx/framePart;
-    cy = cy/framePart;
-
-    bf = bf/framePart;
-    cv::Mat projMatrl = (cv::Mat_<float>(3, 4) << fx, 0., cx, 0., 0., fy, cy, 0., 0,  0., 1., 0.);
-    cv::Mat projMatrr = (cv::Mat_<float>(3, 4) << fx, 0., cx, bf, 0., fy, cy, 0., 0,  0., 1., 0.);
-    cout << "P_left: " << endl << projMatrl << endl;
-    cout << "P_right: " << endl << projMatrr << endl;
 
     // ========================================
     // Инициализация VideoStabilizationPipeline
@@ -196,91 +165,7 @@ int main()
 	double gain = 0.7;
 	//double framePart = 0.95;
 
-	const unsigned int firSize = 4;
-    vector <TransformParam> transforms(firSize), movement(firSize), movementKalman(firSize);
-
-	for (int i = 0; i < firSize;i++)
-	{
-        transforms[i] = {0.0, 0.0, 0.0};
-        movement[i] = {0.0, 0.0, 0.0};
-        movementKalman[i] = {0.0, 0.0, 0.0};        
-    }
-     
-
-	//init KF
-
-	// System dimensions
-	const int state_dim = 9;  // vx, vy, ax, ay
-	const int meas_dim = 3;   // vx, vy
-
-	// Create system matrices
-	double FPS = 30.0;
-	double dt = 1; //1/ FPS;
-	double dt2 = dt*dt/2;
-	cv::Mat A = (cv::Mat_<double>(state_dim, state_dim) <<
-		1,	0,	dt,	0,	dt2,0,	0,	0,	0,	//vx	
-		0,	1,	0,	dt,	0,	dt2,0,	0,	0,	//vy
-		0,	0,	1,	0,	dt,	0,	0,	0,	0,	//ax
-		0,	0,	0,	1,	0,	dt,	0,	0,	0,	//ay
-		0,	0,	0,	0,	1,	0,	0,	0,	0,	//a2x
-		0,	0,	0,	0,	0,	1,	0,	0,	0,	//a2y
-		0,	0,	0,	0,	0,	0,	1,	dt,	dt2,//vroll
-		0,	0,	0,	0,	0,	0,	0,	1,	dt,	//aroll
-		0,	0,	0,	0,	0,	0,	0,	0,	1	//a2roll 
-		);
-
-	cv::Mat C = (cv::Mat_<double>(meas_dim, state_dim) <<
-		1, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, 1, 0, 0, 0, 0, 0, 0, 0,
-		0, 0, 0, 0, 0, 0, 1, 0, 0
-		);
-	
-	cv::Mat Q = cv::Mat::eye(state_dim, state_dim, CV_64F) * 0.00001;	//low value
-	cv::Mat R = cv::Mat::eye(meas_dim, meas_dim, CV_64F) * 10000.0;		//high value
-	cv::Mat P = cv::Mat::eye(state_dim, state_dim, CV_64F) * 1.0;
-	
-	// Create KF
-	KalmanFilterCV kf(dt, A, C, Q, R, P);
-
-	// Initialize with first measurement
-	cv::Mat x0 = (cv::Mat_<double>(state_dim, 1) << 0,0,0, 0,0,0, 0,0,0);
-	kf.init(0, x0);
-
-	// переменные для фильтра Виннера
-	Mat Hw, h, gray_wiener;
-	cuda::GpuMat gHw, gH, gGrayWiener;
-
-	bool wiener = false;
-	bool threadwiener = false;
-	double nsr = 0.01;
-	double qWiener = 8.0;
-	double LEN = 0;
-	double THETA = 0.0;
-
-	//для обработки трех каналов по Виннеру
-	vector<Mat> channels(3), channelsWiener(3);
-	Mat frame_wiener;
-
-	vector<cuda::GpuMat> gChannels(3), gChannelsWiener(3);
-	cuda::GpuMat gFrameWiener;
-
-	// ~~~~~~~~~~~~~~ для счетчика кадров в секунду ~~~~~~~~~~~~~~~//
-	unsigned int frameCnt = 0;
-	double seconds = 0.05;
-	double secondsGPUPing = 0.0;
-	double secondsFullPing = 0.0;
-	clock_t start = clock();
-	clock_t end = clock();
-
-	clock_t startFullPing = clock();
-	clock_t endFullPing = clock();
-
-	clock_t startGPUPing = clock();
-	clock_t endGPUPing = clock();
-    //------------------------------------
-    // END Initialize variables VideoStab
-    //------------------------------------
-    
+   
 
     // ------------------------
     // Load first images
@@ -288,9 +173,6 @@ int main()
     cv::Mat imageRight_t0,  imageLeft_t0, imageLeft_stab_t0, imageRight_stab_t0;
     CameraBase *pCamera = NULL;
     cv::VideoCapture captureLeft, captureRight;
-    // cv::VideoCapture captureLeft("http://192.168.8.106:4747/video?640x480");
-    // cv::VideoCapture captureRight("http://192.168.8.107:4747/video?640x480");
-    
     cv::Mat imageLeft_t0_color, imageRight_t0_color;
     
     if(use_intel_rgbd)
@@ -304,17 +186,12 @@ int main()
         captureLeft >> imageLeft_t0_color;
         cvtColor(imageLeft_t0_color, imageLeft_t0, cv::COLOR_BGR2GRAY);
         
-        //imageLeft_t0_color.copyTo(imageRight_t0_color);
-        // imageLeft_t0.copyTo(imageRight_t0);
         captureRight >> imageRight_t0_color;
         cvtColor(imageRight_t0_color, imageRight_t0, cv::COLOR_BGR2GRAY);
     }
     else
-    {
-        // cv::Mat imageLeft_t0_color;
+    {        
         loadImageLeft(imageLeft_t0_color,  imageLeft_t0, init_frame_id, filepath);
-        
-        // cv::Mat imageRight_t0_color;  
         loadImageRight(imageRight_t0_color, imageRight_t0, init_frame_id, filepath);
     }
     imageLeft_t0.copyTo(imageLeft_stab_t0);
@@ -325,8 +202,44 @@ int main()
     //init sizes of frames
 	const int a = imageLeft_t0.cols;
 	const int b = imageLeft_t0.rows;
-	const double c = sqrt(a * a + b * b);
-	const double atan_ba = atan2(b, a);
+
+    // Camera calibration
+    // Use absolute path to avoid working directory issues
+    string strSettingPath = string("/home/selbizo/CV/StabAndSLAM/visual_odom/calibration/kitti00.yaml");
+    cout << "Calibration Filepath: " << strSettingPath << endl;
+
+    cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
+    if (!fSettings.isOpened())
+    {
+        cerr << "ERROR: Failed to open calibration file: " << strSettingPath << endl;
+        return 1;
+    }
+    int frame_skip = 1;
+    
+    float fx = fSettings["Camera.fx"];
+    float fy = fSettings["Camera.fy"];
+    float cx = fSettings["Camera.cx"];
+    float cy = fSettings["Camera.cy"];
+    float bf = fSettings["Camera.bf"];
+
+
+    
+    double framePart = 0.9;
+    float dx = a * (1.0 - framePart) / 2.0;
+    float dy = b * (1.0 - framePart) / 2.0;
+    fx = fx/framePart;
+    fy = fy/framePart;
+    cx = cx - dx;
+    cy = cy - dy;
+
+    bf = bf/framePart;
+    cv::Mat projMatrl = (cv::Mat_<float>(3, 4) << fx, 0., cx, 0., 0., fy, cy, 0., 0,  0., 1., 0.);
+    cv::Mat projMatrr = (cv::Mat_<float>(3, 4) << fx, 0., cx, bf, 0., fy, cy, 0., 0,  0., 1., 0.);
+    cout << "P_left: " << endl << projMatrl << endl;
+    cout << "P_right: " << endl << projMatrr << endl;
+
+    double MaxShake = b * (1.0 - framePart) / 2.0;
+
 
     // ========================================
     // VideoStabilizationPipeline — высокоуровневый контур стабилизации
@@ -343,105 +256,6 @@ int main()
                   << " cx=" << cx << " cy=" << cy << " bf=" << bf << std::endl;
     }
 
-    //переменные для запоминания кадров и характерных точек
-	Mat frameShowOrigLeft(a, b, CV_8UC3),
-        frameShowOrigRight(a, b, CV_8UC3), 
-        frameOutLeft(a, b, CV_8UC3),
-        frameOutRight(a, b, CV_8UC3);
-	cuda::GpuMat gFrameStabilizedLeft(a, b, CV_8UC3),
-                 gFrameStabilizedRight(a, b, CV_8UC3);
-
-	cuda::GpuMat gFrameLeft(a,b, CV_8UC3),
-                 gFrameRight(a,b, CV_8UC3), 
-                 gFrameShowOrigLeft(a, b, CV_8UC3),
-                 gFrameShowOrigRight(a, b, CV_8UC3),
-		gGrayLeft(a/compression, b / compression, CV_8UC1),
-        gGrayRight(a/compression, b / compression, CV_8UC1), 
-		gCompressedLeft(a / compression, b / compression, CV_8UC3),
-        gCompressedRight(a / compression, b / compression, CV_8UC3);
-
-	cuda::GpuMat gOldFrameLeft(a, b, CV_8UC3),
-                 gOldFrameRight(a, b, CV_8UC3), 
-		gOldGrayLeft(a / compression, b / compression, CV_8UC1),
-        gOldGrayRight(a / compression, b / compression, CV_8UC1),
-		gOldCompressedLeft(a / compression, b / compression, CV_8UC3),
-        gOldCompressedRight(a / compression, b / compression, CV_8UC3);
-	
-    cuda::GpuMat gToShowLeft(a, b, CV_8UC3),
-                 gToShowRight(a, b, CV_8UC3);
-
-	cuda::GpuMat gRoiGrayLeft, gRoiGrayRight;
-
-	Rect roi(
-		a * ((1.0 - framePart) / 2.0),
-		b * ((1.0 - framePart) / 2.0),
-		a * framePart,
-		b * framePart
-	);
-
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~для вывода изображения на дисплей~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	Mat frameStabilizatedCropResizedLeft(a, b, CV_8UC3), frame_cropLeft,
-	    frameStabilizatedCropResizedRight(a, b, CV_8UC3), frame_cropRight;
-    cuda::GpuMat 
-		gFrameStabilizatedCropLeft(roi.width, roi.height, CV_8UC3),
-        gFrameStabilizatedCropRight(roi.width, roi.height, CV_8UC3), 
-		gFrameRoiLeft(roi.width, roi.height, CV_8UC3),
-        gFrameRoiRight(roi.width, roi.height, CV_8UC3),
-		gFrameOutLeft(a, b, CV_8UC3),
-        gFrameOutRight(a, b, CV_8UC3),
-		gFrameStabilizatedCropResizedLeft(a, b, CV_8UC3),
-        gFrameStabilizatedCropResizedRight(a, b, CV_8UC3),
-		gWriterFrameToShowLeft(a, b, CV_8UC3),
-        gWriterFrameToShowRight(a, b, CV_8UC3);
-
-
-	//~~~~~~~~~~~~~~~~~~~~~~~~~~~Создадим маску для нахождения точек~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	Mat maskSearchLeft = Mat::zeros(cv::Size(b / compression , a / compression ), CV_8U);
-	Mat maskSearchRight = Mat::zeros(cv::Size(b / compression , a / compression ), CV_8U);
-	
-    cv::rectangle(maskSearchLeft, Rect(b * (1.0 - 0.5) / compression / 2, b * (1.0 - 0.5) / compression / 2, a * 0.5, b * 0.5 / compression ), 
-		Scalar(255), FILLED); // Прямоугольная маска
-    cv::rectangle(maskSearchRight, Rect(a * (1.0 - 0.5) / compression / 2, b * (1.0 - 0.5) / compression / 2, a * 0.5, b * 0.5 / compression ), 
-		Scalar(255), FILLED); // Прямоугольная маска
-    
-	// cv::rectangle(maskSearchLeft, Rect(b * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
-	// 	Scalar(0), FILLED);
-	// cv::rectangle(maskSearchRight, Rect(a * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
-	// 	Scalar(0), FILLED);
-    
-	cuda::GpuMat gMaskSearchLeft(maskSearchLeft);
-    cuda::GpuMat gMaskSearchRight(maskSearchRight);
-
-	Mat maskSearchSmallLeft = Mat::zeros(cv::Size(a / compression, b / compression), CV_8U);
-	Mat maskSearchSmallRight = Mat::zeros(cv::Size(a / compression, b / compression), CV_8U);
-	
-    cv::rectangle(maskSearchSmallLeft, Rect(a * (1.0 - 0.3) / compression / 2, b * (1.0 - 0.3) / compression / 2, max(a,b) * 0.3 / compression, max(a,b) * 0.3 / compression),
-		Scalar(255), FILLED); // Прямоугольная маска
-
-    cv::rectangle(maskSearchSmallRight, Rect(a * (1.0 - 0.3) / compression / 2, b * (1.0 - 0.3) / compression / 2, max(a,b) * 0.3 / compression, max(a,b) * 0.3 / compression),
-		Scalar(255), FILLED); // Прямоугольная маска
-    
-	cuda::GpuMat gMaskSearchSmallLeft(maskSearchSmallLeft);
-	cuda::GpuMat gMaskSearchSmallRight(maskSearchSmallRight);
-    cuda::GpuMat gMaskSearchSmallRoiLeft, gMaskSearchSmallRoiRight;
-
-	Mat roiMaskLeft = Mat::zeros(cv::Size(a / compression, b / compression), CV_8U);
-	cv::rectangle(roiMaskLeft, Rect(a * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
-		Scalar(255), FILLED); // Прямоугольная маска
-
-	Mat roiMaskRight = Mat::zeros(cv::Size(a / compression, b / compression), CV_8U);
-	cv::rectangle(roiMaskRight, Rect(a * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
-		Scalar(255), FILLED); // Прямоугольная маска
-	//cuda::GpuMat gRoiMask(roiMask);
-
-	//~~~~~~~~~~~~~~~~~~~~~~~~~~~Создаем GpuMat для мнимой части фильтра Винера~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	cuda::GpuMat zeroMatHLeft(cv::Size(a, b), CV_32F, Scalar(0)), complexHLeft;
-	cuda::GpuMat zeroMatHRight(cv::Size(a, b), CV_32F, Scalar(0)), complexHRight;
-	
-	Ptr<cuda::DFT> forwardDFTLeft = cuda::createDFT(cv::Size(a, b), DFT_SCALE | DFT_COMPLEX_INPUT);
-	Ptr<cuda::DFT> inverseDFTLeft = cuda::createDFT(cv::Size(a, b), DFT_INVERSE | DFT_COMPLEX_INPUT);
-	Ptr<cuda::DFT> forwardDFTRight = cuda::createDFT(cv::Size(a, b), DFT_SCALE | DFT_COMPLEX_INPUT);
-	Ptr<cuda::DFT> inverseDFTRight = cuda::createDFT(cv::Size(a, b), DFT_INVERSE | DFT_COMPLEX_INPUT);
 
     // ========================================
     // KalmanSplitter: разделение motion на low-freq (VO) и high-freq (stab)
@@ -456,25 +270,11 @@ int main()
         kalmanLogFile << "frame\tmode\tinnov_norm\tq_trans\tq_rot\tr_trans\tr_rot\thigh_energy\tlow_dx\tlow_dy\tlow_da" << std::endl;
     }
 
-    //------------------------------------------
-    // First frame VidStab
-    //------------------------------------------
-
-
-
-
-    //------------------------------------------
-    // END Initialize variables VideoStab
-    //------------------------------------------
-
-
-
 
     // -----------------------------------------
     // Run visual odometry
     // -----------------------------------------
-    std::vector<FeaturePoint> oldFeaturePointsLeft;
-    std::vector<FeaturePoint> currentFeaturePointsLeft;
+
     
     
     // Добавляем переменные для интерполяции
@@ -490,8 +290,6 @@ int main()
     cv::Mat imageLeft_t1_color, imageRight_t1_color;  
     cv::Mat imageRight_t1,  imageLeft_t1;
     cv::Mat imageRight_stab_t1,  imageLeft_stab_t1;
-    cv::Mat points3D_t0_stab, points4D_t0_stab;
-    cv::Vec3f rotation_euler_stab;
     cv::Mat state;
     
     //std::vector<cv::Point2f> oldPointsLeft_t0;
@@ -509,11 +307,9 @@ int main()
     std::vector<Frame> keyframes;
     std::vector<PoseGraphNode3D> poseGraphNodes;
     std::vector<PoseGraphEdge3D> poseGraphEdges;
-    cv::Mat loop_pose_correction = cv::Mat::eye(4, 4, CV_64F);
     int last_added_node_index = -1;
     
     // KalmanSplitter результат для текущего кадра
-    KalmanMotionComponents kalmanResult;
     bool isTurning = false;
     
     // Бенчмарк-лог (вне цикла)
@@ -575,11 +371,11 @@ int main()
             frame_skip = 1;
         if (frame_id > 13000 && frame_skip > 0)
             frame_skip = -1;
-
-        if (false)
+      
+        if (true)
         {
             noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake))*0.1 + MaxShake*sin(frame_id*DEG_TO_RAD*40.0);
-            //noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake))*0.0 + MaxShake*cos(frame_id*DEG_TO_RAD*20.0);
+            noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake))*0.1 + MaxShake*cos(frame_id*DEG_TO_RAD*34.0);
             //noiseIn.da = (double)(rng.uniform(-sqrt(MaxShake)/1000, sqrt(MaxShake)/1000)) + 3.0*sqrt(MaxShake)/1000*sin(frame_id*DEG_TO_RAD*10.0);
 
             //noiseOut[0] = iirNoise(noiseIn, X,Y);
