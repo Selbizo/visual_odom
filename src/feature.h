@@ -15,9 +15,7 @@
 #endif
 
 #include <iostream>
-#include <ctype.h>
 #include <algorithm>
-#include <iterator>
 #include <vector>
 #include <ctime>
 #include <sstream>

@@ -115,22 +115,15 @@ void edgetaper(const Mat& inputImg, Mat& outputImg, double gamma, double beta)
 
 void GcalcPSF(cuda::GpuMat& outputImg, Size filterSize, Size psfSize, double len, double theta)
 {
-	// ������� GpuMat ��� ���������� ��������
 	int scale = 8;
 	cuda::GpuMat h(filterSize, CV_32F, Scalar(0));
 	Mat hCpu(psfSize, CV_32F, Scalar(0));
 	Mat hCpuBig(Size(psfSize.width * scale, psfSize.height * scale), CV_32F, Scalar(0));
-	// ����� �������
 	Point center(psfSize.width * scale / 2, psfSize.height * scale / 2);
-
-	// ������� �������
 	Size axes(scale, cvRound(double(len * scale + scale) / 2.0f));
 	Size axes2(scale, cvRound(double(len * scale + scale) / 4.0f));
 	Size axes3(scale, cvRound(double(len * scale + scale) / 6.0f));
-	// ���� �������� �������
 	double angle = 90.0 - theta;
-
-	// ������ ������ �� GpuMat
 
 	ellipse(hCpuBig, center, axes, angle, 0, 360, Scalar(0.2), FILLED);
 
@@ -141,50 +134,34 @@ void GcalcPSF(cuda::GpuMat& outputImg, Size filterSize, Size psfSize, double len
 		resize(hCpu, hCpu, Size(h.cols / 2 - 1, hCpu.rows), INTER_LINEAR);
 	if (hCpu.rows > h.rows / 2)
 		resize(hCpu, hCpu, Size(hCpu.cols, h.rows / 2 - 1), INTER_LINEAR);
-	// 
-		// �������� ����� ��������� ����� � ������� ����
+	
 	imshow("PSF Cpu", hCpu);
-	//hCpu(Rect(0, 0, psfSize.width, psfSize.height)).copyTo(h(Rect((filterSize.width - psfSize.width) / 2, (filterSize.height - psfSize.height) / 2, psfSize.width, psfSize.height)));
+	
 	hCpu(Rect(0, 0, hCpu.cols, hCpu.rows)).copyTo(h(Rect((filterSize.width - hCpu.cols) / 2, (filterSize.height - hCpu.rows) / 2, hCpu.cols, hCpu.rows)));
 
-	//h.upload(hCpu);
-
-
-
-	// ��������� ��� �������� GpuMat
 	Scalar summa = cuda::sum(h);
 
-	// ����� GpuMat �� �����
 	cuda::divide(h, Scalar(summa[0]), outputImg);
-
-
 }
 
 void GcalcPSFCircle(cuda::GpuMat& outputImg, Size filterSize, double len, double theta)
 {
-	// ������� GpuMat ��� ���������� ��������
+	
 	cuda::GpuMat h(filterSize, CV_32F, Scalar(0));
 	Mat hCpu(filterSize, CV_32F, Scalar(0));
-	// ����� �������
+	
 	Point center(filterSize.width / 2, filterSize.height / 2);
-
-	// ������� �������
+	
 	Size axes(cvRound(double(len) / 2.0), cvRound(double(len) / 2.0));
-	Size axes2(0, cvRound(double(len) / 4.0f));
-	// ���� �������� �������
+	
 	double angle = 90.0 - theta;
 
-	// ������ ������ �� GpuMat
-
 	ellipse(hCpu, center, axes, angle, 0, 360, Scalar(255), FILLED);
-	//ellipse(hCpu, center, axes2, angle, 0, 360, Scalar(255), FILLED);
 	blur(hCpu, hCpu, Size(5, 5));
 	h.upload(hCpu);
 
-	// ��������� ��� �������� GpuMat
 	Scalar summa = cuda::sum(h);
 
-	// ����� GpuMat �� �����
 	cuda::divide(h, Scalar(summa[0]), outputImg);
 }
 
@@ -208,114 +185,79 @@ void Gfftshift(const cuda::GpuMat& inputImg, cuda::GpuMat& outputImg)
 
 void Gfilter2DFreq(const cuda::GpuMat& inputImg, cuda::GpuMat& outputImg, const cuda::GpuMat& H)
 {
-	// ��������� ������� �����������
 	cuda::GpuMat inputClone;
 	inputImg.copyTo(inputClone);
-
-	// ������� GpuMat ��� ������ �����
+	
 	cuda::GpuMat zeroMat(inputImg.size(), CV_32F, Scalar(0));
-
-	// ���������� �������������� � ������ ����� � ����������� �������
+	
 	vector<cuda::GpuMat> planes = { inputClone, zeroMat };
 	cuda::GpuMat complexInput;
 	cuda::merge(planes, complexInput);
-
-	// ������ �������������� �����
+	
 	//cuda::dft(complexInput, complexInput, complexInput.size(), DFT_SCALE | DFT_COMPLEX_OUTPUT);
 	cuda::dft(complexInput, complexInput, complexInput.size(), DFT_SCALE);
-
-	// ��������� ������
+	
 	cuda::GpuMat HClone;
 	H.copyTo(HClone);
-
-	// ������� GpuMat ��� ������ ����� �������
+	
 	cuda::GpuMat zeroMatH(H.size(), CV_32F, Scalar(0));
 
-	// ���������� �������������� � ������ ����� ������� � ����������� �������
+	
 	vector<cuda::GpuMat> planesH = { HClone, zeroMatH };
 	cuda::GpuMat complexH;
 	cuda::merge(planesH, complexH);
 
-	// ��������� ��������
+	
 	cuda::GpuMat complexOutput;
 	cuda::mulSpectrums(complexInput, complexH, complexOutput, 0);
 
-	// �������� �������������� �����
+	
 	cuda::dft(complexOutput, complexOutput, complexOutput.size(), DFT_INVERSE);
 
-	// ��������� ����������� ������� �� ��� �����
 	vector<cuda::GpuMat> planesOut;
 	cuda::split(complexOutput, planesOut);
 
-	// ������ ��������� �������� ����������� ����������
 	outputImg = planesOut[0];
 }
 
 void Gfilter2DFreqV2(const cuda::GpuMat& inputImg, cuda::GpuMat& outputImg, const cuda::GpuMat& complexH, Ptr<cuda::DFT>& forwardDFT, Ptr<cuda::DFT>& inverseDFT)
 {
-	// ��������� ������� �����������
-	//cuda::GpuMat inputClone;
-	//inputImg.copyTo(inputClone);
-
-	// ������� GpuMat ��� ������ �����
+	
 	cuda::GpuMat zeroMat(inputImg.size(), CV_32F, Scalar(0));
-
-	// ���������� �������������� � ������ ����� � ����������� �������
 	vector<cuda::GpuMat> planes = { inputImg, zeroMat };
 	cuda::GpuMat complexInput;
 	cuda::merge(planes, complexInput);
 
-	// ������ �������������� �����
-
 	forwardDFT->compute(complexInput, complexInput);
-	// ��������� ��������
 	cuda::GpuMat complexOutput;
 	cuda::mulSpectrums(complexInput, complexH, complexOutput, 0);
-	// �������� �������������� �����
 	inverseDFT->compute(complexOutput, complexOutput);
-
-	// ��������� ����������� ������� �� ��� �����
+	
 	vector<cuda::GpuMat> planesOut;
 	cuda::split(complexOutput, planesOut);
-
-	// ������ ��������� �������� ����������� ����������
 	outputImg = planesOut[0];
 }
 
 void GcalcWnrFilter(const cuda::GpuMat& input_h_PSF, cuda::GpuMat& output_G, double nsr)
 {
-	// ������� ����� �������� �����������
-	//cuda::GpuMat h_PSF_clone;
-	//input_h_PSF.copyTo(h_PSF_clone);
-
-	// ��������� ����� �����
 	cuda::GpuMat h_PSF_shifted;
 	Gfftshift(input_h_PSF, h_PSF_shifted);
-
-	// ������� GpuMat ��� ������ �����
 	cuda::GpuMat zeroMat(h_PSF_shifted.size(), CV_32F, Scalar(0));
-
-	// ���������� �������������� � ������ ����� � ����������� �������
+	
 	vector<cuda::GpuMat> planes = { h_PSF_shifted, zeroMat };
 	cuda::GpuMat complexI;
 	cuda::merge(planes, complexI);
 
-	// ������ �������������� �����
-	//cuda::dft(complexI, complexI, complexI.size(), DFT_COMPLEX_OUTPUT);
 	cuda::dft(complexI, complexI, complexI.size());
-
-	// ��������� ����������� ������� �� ��� �����
 	vector<cuda::GpuMat> planesOut;
 	cuda::split(complexI, planesOut);
 
-	// ��������� �����������
 	cuda::GpuMat denom;
 	cuda::magnitude(planesOut[0], planesOut[1], denom);
 	cuda::pow(denom, 2, denom);
-	//denom += nsr;
+	
 	cuda::add(denom, nsr, denom);
 
-	// �������
 	cuda::divide(planesOut[0], denom, output_G);
 }
 

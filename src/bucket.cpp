@@ -1,6 +1,6 @@
 
 #include "bucket.h"
-
+#include "feature.h"
 
 Bucket::Bucket(int size){
     max_size = size;

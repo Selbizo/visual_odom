@@ -12,7 +12,6 @@
 #include <iostream>  // std::cout
 #include <thread>	 //std::thread
 
-//#include "basicStructs.hpp"
 
 using namespace cv;
 using namespace std;

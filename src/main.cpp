@@ -5,12 +5,9 @@
 #include "opencv2/video/tracking.hpp"
 
 #include <iostream>
-#include <ctype.h>
 #include <algorithm>
-#include <iterator>
 #include <vector>
 #include <ctime>
-#include <sstream>
 #include <fstream>
 #include <string>
 #include <iomanip>
@@ -80,7 +77,6 @@ int main()
     if(filepath == "camera") use_camera = true;
 
     // Camera calibration
-    //string strSettingPath = string(argv[2]);
     // Use absolute path to avoid working directory issues
     string strSettingPath = string("/home/selbizo/CV/StabAndSLAM/visual_odom/calibration/kitti00.yaml");
     cout << "Calibration Filepath: " << strSettingPath << endl;

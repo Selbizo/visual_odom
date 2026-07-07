@@ -1,12 +1,4 @@
 #pragma once
-// //OpenCV
-// #include <opencv2/core.hpp>          // Mat, Scalar, Size, Rect, Point
-// #include <opencv2/imgproc.hpp>       // cvtColor, rectangle, ellipse, putText
-// #include <opencv2/highgui.hpp>       // imshow, imwrite
-// #include <opencv2/calib3d.hpp>       // findChessboardCorners, calibrateCamera
-// #include <opencv2/videoio.hpp>       // VideoCapture
-// #include <opencv2/cudaarithm.hpp>    // GpuMat, upload, download
-
 
 #include "opencv2/core.hpp"          // Mat, Scalar, Size, Rect, Point
 #include "opencv2/imgproc.hpp"       // cvtColor, rectangle, ellipse, putText
@@ -26,15 +18,8 @@
 
 using namespace cv;
 using namespace std;
-//namespace fs = std::filesystem;
-
-
-
-
-//int createFolders(vector <std::string>& folderPath);
 
 void createPointColors(std::vector<Scalar>& colors, cv::RNG& rng);
-
 
 void downloadBasicFunc(const cuda::GpuMat& d_mat, vector<Point2f>& vec);
 
@@ -55,8 +40,6 @@ void showServiceInfoSmall(Mat& writerFrame, double Q, double nsr, bool wiener, b
 	double tauStab, double gain, double framePart, int gP0_cols, int maxCorners,
 	double seconds, double secondsPing, double secondsFullPing, int a, int b, vector <Point> textOrg, vector <Point> textOrgOrig, vector <Point> textOrgCrop, vector <Point> textOrgStab,
 	int fontFace, double fontScale, Scalar color);
-
-//#include <opencv2/opencv.hpp>
 
 class KalmanFilterCV {
 public:
