@@ -87,6 +87,9 @@ bool optimizePoseGraph(std::vector<PoseGraphNode3D>& nodes,
                        const std::vector<PoseGraphEdge3D>& edges,
                        int iterations = 10);
 
+double calculatePoseGraphResidual(const std::vector<PoseGraphNode3D>& nodes,
+                                  const std::vector<PoseGraphEdge3D>& edges);
+
 bool addKeyframeAndCheckLoop(const cv::Mat& imageGray,
                              int frameId,
                              const cv::Mat& projMatL,
