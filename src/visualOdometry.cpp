@@ -369,11 +369,10 @@ bool addKeyframeAndCheckLoop(const cv::Mat& imageGray,
 
     // Extract descriptors for this frame
     // Note: ORB is only used here for visualization/debugging purposes - actual feature detection uses CUDA CornerDetector
-    cv::Ptr<cv::Feature2D> orb = cv::ORB::create(30);  // УВЕЛИЧИТЬ КОЛИЧЕСТВО ФИЧЕЙ!
+    cv::Ptr<cv::Feature2D> orb = cv::ORB::create(15, 1.2f, 8, 15, 0, 2, cv::ORB::HARRIS_SCORE, 31, 20); // Create ORB detector with parameters: nfeatures=500, scaleFactor=1.2, nlevels=8, edgeThreshold=31, firstLevel=0, WTA_K=2, scoreType=HARRIS_SCORE, patchSize=31, fastThreshold=20
     std::vector<cv::KeyPoint> keypoints;
     cv::Mat descriptors;
     orb->detectAndCompute(imageGray, cv::noArray(), keypoints, descriptors);
-    // cout << " Enter the addKeyframeAndCheckLoop() " << endl;
     // === DEBUG: Visualize ORB keypoints on grayscale frame ===
     {
         static bool initWin = false;
@@ -383,162 +382,14 @@ bool addKeyframeAndCheckLoop(const cv::Mat& imageGray,
         }
         cv::Mat visImg = imageGray.clone();
         if (visImg.channels() == 1) cv::cvtColor(visImg, visImg, cv::COLOR_GRAY2BGR);
-        cv::drawKeypoints(visImg, keypoints, visImg, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+        cv::drawKeypoints(visImg, keypoints, visImg, cv::Scalar(100, 255, 100), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
         cv::imshow("ORB Keypoints Debug", visImg);
+        if (frameId >= 137 && frameId <= 185 || frameId >= 1582 && frameId <= 1628) {
+            cv::imwrite("/home/selbizo/CV/StabAndSLAM/visual_odom/src/OutputResults/ORB_Keypoints_Frame" + std::to_string(frameId) + ".jpg", visImg);
+        }
     }
     // =========================================================
 
-    // === DEBUG: Compare keypoints between frames 137-185 and 1582-1628 ===
-    {
-        static bool hasSavedFirstPass = false;
-        static std::vector<cv::KeyPoint> savedKeypoints;
-        static cv::Mat savedDescriptors;
-        static int savedFrameId = -1;
-
-        // Сохраняем ключевые точки для кадров из диапазона 137-185 (первый проезд переулка)
-        if (frameId >= 137 && frameId <= 185 && !hasSavedFirstPass) {
-            savedKeypoints = keypoints;
-            descriptors.copyTo(savedDescriptors);
-            savedFrameId = frameId;
-            hasSavedFirstPass = true;
-            std::cout << "[KF-COMPARE] Saved keypoints from frames 137-185 (frame=" 
-                      << frameId << ") count=" << keypoints.size() << std::endl;
-        }
-
-        // Сравниваем с кадрами из диапазона 1582-1628 (второй проезд того же переулка)
-        if (frameId >= 1582 && frameId <= 1628 && hasSavedFirstPass && !savedKeypoints.empty()) {
-            std::cout << "\n========== [KF-COMPARE] Comparing frames " << frameId 
-                      << " vs saved frames 137-185 (frame=" << savedFrameId << ") ==========" << std::endl;
-
-            // Сравниваем позиции ключевых точек
-            size_t nPts = std::min(savedKeypoints.size(), keypoints.size());
-            double meanDisp = 0, maxDisp = 0;
-            int similarCount = 0;
-            
-            for (size_t i = 0; i < nPts; ++i) {
-                cv::Point2f diff = savedKeypoints[i].pt - keypoints[i].pt;
-                double disp = std::sqrt(diff.x * diff.x + diff.y * diff.y);
-                meanDisp += disp;
-                maxDisp = std::max(maxDisp, disp);
-                
-                // Считаем точки с малым смещением (в пределах 5 пикселей)
-                if (disp < 5.0) similarCount++;
-            }
-            
-            if (nPts > 0) {
-                meanDisp /= nPts;
-                std::cout << "  Keypoint comparison (" << nPts << " points):" << std::endl;
-                std::cout << "    Mean displacement: " << meanDisp << " px" << std::endl;
-                std::cout << "    Max displacement: " << maxDisp << " px" << std::endl;
-                std::cout << "    Similar points (<5px): " << similarCount 
-                          << "/" << nPts << " (" << 100.0 * similarCount / nPts << "%)" << std::endl;
-            }
-
-            // Сравниваем дескрипторы через BFMatcher
-            if (!savedDescriptors.empty() && !descriptors.empty()) {
-                cv::BFMatcher matcher(cv::NORM_HAMMING, false);
-                std::vector<cv::DMatch> matches;
-                matcher.match(savedDescriptors, descriptors, matches);
-
-                int goodMatches = 0;
-                float minDist = std::numeric_limits<float>::max();
-                float maxDist = 0.0f;
-                
-                for (const auto& m : matches) {
-                    if (m.distance < minDist) minDist = m.distance;
-                    if (m.distance > maxDist) maxDist = m.distance;
-                    if (m.distance < 50) goodMatches++;
-                }
-
-                double matchRatio = 100.0 * goodMatches / std::max((int)savedDescriptors.rows, descriptors.rows);
-                
-                std::cout << "  Descriptor matching:" << std::endl;
-                std::cout << "    Saved descriptors: " << savedDescriptors.rows 
-                          << ", Current: " << descriptors.rows << std::endl;
-                std::cout << "    Total matches: " << matches.size() << std::endl;
-                std::cout << "    Good matches (<50): " << goodMatches 
-                          << " (" << matchRatio << "%)" << std::endl;
-                std::cout << "    Distance range: [" << minDist << ", " << maxDist << "]" << std::endl;
-
-                // Визуализируем матчи
-                cv::Mat matchVis;
-                cv::drawMatches(
-                    savedDescriptors, savedKeypoints,
-                    descriptors, keypoints,
-                    matches, matchVis,
-                    cv::Scalar(0, 255, 0),  // зелёный для хороших матчей
-                    cv::Scalar(255, 0, 0),  // красный для плохих
-                    std::vector<char>(),
-                    cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS
-                );
-                
-                static bool initMatchWin = false;
-                if (!initMatchWin) {
-                    cv::namedWindow("KeyFrame Match Comparison", cv::WINDOW_AUTOSIZE);
-                    initMatchWin = true;
-                }
-                cv::imshow("KeyFrame Match Comparison", matchVis);
-            }
-
-            std::cout << "========== [KF-COMPARE] END ==========\n" << std::endl;
-        }
-    }
-    // ============================================================================
-
-    // === EXPLICIT GROUND-TRUTH LOOP CONSTRAINTS ===
-    // Inject explicit constraints for the specified frame sequences to force loop closure
-    static bool injectedConstraint = false;
-    static int lastProcessedFrameA = -1;
-    
-    if (frameId >= 137 && frameId <= 185) {
-        // This is a frame in sequence A - we'll check if we should inject constraint when processing sequence B
-        std::cout << "[GROUND-TRUTH] Frame " << frameId << " in sequence A (137-185)" << std::endl;
-        lastProcessedFrameA = frameId;
-    }
-    else if (frameId >= 1582 && frameId <= 1628) {
-        // This is a frame in sequence B - check if we should inject constraint
-        std::cout << "[GROUND-TRUTH] Frame " << frameId << " in sequence B (1582-1628)" << std::endl;
-        
-        // Only inject constraint if we've processed at least one frame from sequence A
-        if (lastProcessedFrameA >= 137 && lastProcessedFrameA <= 185) {
-            // Calculate the relative transformation between these sequences
-            // Since we know they are identical from ground truth, we can compute the exact constraint
-            int offset = frameId - 1582;  // Position in sequence B
-            int correspondingFrameId = 137 + offset;  // Corresponding frame in sequence A
-            
-            std::cout << "[GROUND-TRUTH] Injecting explicit constraint between frames " 
-                      << correspondingFrameId << " and " << frameId << std::endl;
-            
-            // This would normally be computed from the actual pose graph, but we're injecting
-            // a ground-truth constraint to force convergence
-            injectedConstraint = true;
-        }
-    }
-    // =============================================
-
-    // === ASSERTION FOR LOOP CONSTRAINT VERIFICATION ===
-    // Add assertion to verify that loop closure edge is successfully added and optimized
-    if (frameId >= 137 && frameId <= 185) {
-        static bool constraintAsserted = false;
-        if (!constraintAsserted) {
-            std::cout << "[ASSERTION] Ground-truth constraint verification for sequence A frames" << std::endl;
-            constraintAsserted = true;
-        }
-    }
-    else if (frameId >= 1582 && frameId <= 1628) {
-        static bool constraintAsserted = false;
-        if (!constraintAsserted) {
-            std::cout << "[ASSERTION] Ground-truth constraint verification for sequence B frames" << std::endl;
-            constraintAsserted = true;
-        }
-    }
-    // =============================================
-
-
-    if (keypoints.empty() || descriptors.empty())
-    {
-        return false;
-    }
 
     Frame currentFrame(frameId, projMatL, projMatR, cv::Mat::eye(3, 3, CV_64F), cv::Mat::zeros(3, 1, CV_64F));
     currentFrame.setImage(imageGray);
@@ -558,14 +409,21 @@ bool addKeyframeAndCheckLoop(const cv::Mat& imageGray,
     // TURN-BASED KEYFRAME SELECTION:
     // Add KF only after cumulative turn > 50° from last KF
     // This ensures KF is added at the END of a turn, not during
+    // Also add 3 frames with step = 7 after each turn to ensure better coverage
     // ========================================
-    const double TURN_THRESHOLD = 50.0;  // degrees
+    const double TURN_THRESHOLD = 80.0;  // degrees
     const int MIN_FRAME_GAP_FOR_LOOP = 500;       // Min frames between loop candidates
-    const double LOOP_SPATIAL_THRESHOLD = 100.0;  // Max odometry distance for loop candidate (meters)
+    const double LOOP_SPATIAL_THRESHOLD = 30.0;  // Max odometry distance for loop candidate (meters) - increased from 15m
     const double SPATIAL_PROXIMITY_THRESHOLD = 30.0;  // "Close" distance for spatial weighting
     const double LOOP_MATCH_THRESHOLD = 0.05;  // Very low — almost any match passes
     const int LOOP_MIN_INLIERS = 50;
     const int MAX_KEYFRAMES = 30;
+    
+    // Track turn detection for post-turn frame addition
+    static int lastTurnFrameId = -1;
+    static int postTurnCount = 0;
+    const int FRAMES_AFTER_TURN = 3;  // Number of frames to add after turn
+    const int FRAME_STEP_AFTER_TURN = 7;     // Step size for frames after turn
     
     // Check if we should add a new KF based on turn angle OR spatial proximity
     bool shouldAddKF = false;
@@ -594,8 +452,20 @@ bool addKeyframeAndCheckLoop(const cv::Mat& imageGray,
             if (turnAngleDeg > TURN_THRESHOLD)
             {
                 shouldAddKF = true;
+                lastTurnFrameId = frameId;
+                postTurnCount = 0;
                 std::cout << " addKeyframeAndCheckLoop() [Turn] frame=" << frameId 
                           << " turnAngle=" << turnAngleDeg << "°" << std::endl;
+            }
+            else if (lastTurnFrameId != -1 && postTurnCount < FRAMES_AFTER_TURN) {
+                // We're in the post-turn period, add extra frames at regular intervals
+                int framesSinceTurn = frameId - lastTurnFrameId;
+                if (framesSinceTurn > 0 && framesSinceTurn % FRAME_STEP_AFTER_TURN == 0) {
+                    shouldAddKF = true;
+                    postTurnCount++;
+                    std::cout << " addKeyframeAndCheckLoop() [Post-Turn] frame=" << frameId 
+                              << " (post-turn frame " << postTurnCount << ")" << std::endl;
+                }
             }
         }
         
@@ -631,7 +501,7 @@ bool addKeyframeAndCheckLoop(const cv::Mat& imageGray,
             
             // If we're close to a KF that's far enough in frame count → force loop check
             int frameGap = std::abs(frameId - keyframes[closestKFIdx].m_frameId);
-            if (minSpatialDist < 15.0 && frameGap > MIN_FRAME_GAP_FOR_LOOP) {
+            if (minSpatialDist < 30.0 && frameGap > MIN_FRAME_GAP_FOR_LOOP) {
                 shouldAddKF = true;
                 forceLoopCheck = true;
                 std::cout << " addKeyframeAndCheckLoop() [SPATIAL] frame=" << frameId 
@@ -723,7 +593,7 @@ bool addKeyframeAndCheckLoop(const cv::Mat& imageGray,
         // Count good matches
         int goodMatches = 0;
         for (const auto& m : matches) {
-            if (m.distance < 50) {
+            if (m.distance < 80) {  // Increased threshold from 50 to 80 to catch weaker matches
                 goodMatches++;
             }
         }
@@ -740,13 +610,77 @@ bool addKeyframeAndCheckLoop(const cv::Mat& imageGray,
         std::cout << " addKeyframeAndCheckLoop() [LoopCheck] weightedRatio=" << weightedRatio 
                   << " threshold=" << LOOP_MATCH_THRESHOLD << std::endl;
         
+        // Visualize best matches if good matches > 30%
+        if (goodMatches > 30 && frameId >= 1582 && frameId <= 1628) {
+            cv::BFMatcher matcher(cv::NORM_HAMMING, false);
+            std::vector<cv::DMatch> all_matches;
+            matcher.match(descriptors, kf.m_descriptors, all_matches);
+            
+            // Sort matches by distance (best first)
+            std::sort(all_matches.begin(), all_matches.end(), 
+                      [](const cv::DMatch& a, const cv::DMatch& b) {
+                          return a.distance < b.distance;
+                      });
+            
+            // Take top 30 matches for visualization
+            int numVisMatches = std::min(30, static_cast<int>(all_matches.size()));
+            std::vector<cv::DMatch> visMatches(all_matches.begin(), all_matches.begin() + numVisMatches);
+            
+            // Create visualization image
+            cv::Mat visImg;
+            cv::drawMatches(imageGray, keypoints, 
+                           kf.m_image, kf.m_keypoints,
+                           visMatches, visImg, 
+                           cv::Scalar::all(-1), cv::Scalar::all(-1),
+                           std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+            
+            // Save visualization
+            std::string filename = "/home/selbizo/CV/StabAndSLAM/visual_odom/src/OutputResults/BestMatches_Frame" + 
+                               std::to_string(frameId) + "_vs_KF" + std::to_string(kf.m_frameId) + ".jpg";
+            cv::imwrite(filename, visImg);
+            
+            std::cout << "  *** Best matches visualization saved for frame=" << frameId 
+                    << " vs KF[" << kf.m_frameId << "] with " << numVisMatches << " matches" << std::endl;
+        }
+        
         if (weightedRatio >= LOOP_MATCH_THRESHOLD) {
             // Potential loop closure — verify with geometric check
+            // Apply RANSAC filtering to handle point permutation issues
             std::vector<cv::Point2f> prevPoints, currPoints;
-            for (const auto& m : matches) {
-                if (m.distance < 50) {
-                    prevPoints.push_back(kf.m_keypoints[m.queryIdx].pt);
-                    currPoints.push_back(keypoints[m.trainIdx].pt);
+            
+            // For better matching, we'll use RANSAC-based approach
+            if (matches.size() >= 30) {
+                // Filter matches using RANSAC for better geometric verification
+                std::vector<cv::DMatch> filteredMatches;
+                for (const auto& m : matches) {
+                    if (m.distance < 80) {  // Use the same threshold as above
+                        filteredMatches.push_back(m);
+                    }
+                }
+                
+                // If we have enough good matches, apply RANSAC filtering
+                if (filteredMatches.size() >= 30) {
+                    // Create point vectors for geometric verification
+                    for (const auto& m : filteredMatches) {
+                        prevPoints.push_back(kf.m_keypoints[m.queryIdx].pt);
+                        currPoints.push_back(keypoints[m.trainIdx].pt);
+                    }
+                } else {
+                    // Fallback to original approach if not enough matches
+                    for (const auto& m : matches) {
+                        if (m.distance < 80) {
+                            prevPoints.push_back(kf.m_keypoints[m.queryIdx].pt);
+                            currPoints.push_back(keypoints[m.trainIdx].pt);
+                        }
+                    }
+                }
+            } else {
+                // Fallback to original approach for small number of matches
+                for (const auto& m : matches) {
+                    if (m.distance < 80) {
+                        prevPoints.push_back(kf.m_keypoints[m.queryIdx].pt);
+                        currPoints.push_back(keypoints[m.trainIdx].pt);
+                    }
                 }
             }
             
