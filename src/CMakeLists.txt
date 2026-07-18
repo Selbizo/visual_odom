@@ -34,13 +34,17 @@ target_link_libraries(rgbd_standalone ${OpenCV_LIBS})
 add_library(Frame SHARED "Frame.cpp")
 target_link_libraries(Frame ${OpenCV_LIBS})
 
+# Add loop closure library (simplified version)
+add_library(loopclosure_simple SHARED "loopclosure_simple.cpp")
+target_link_libraries(loopclosure_simple ${OpenCV_LIBS} feature utils visualOdometry Frame)
+
 # ---- Output directory ----
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR})
 message(STATUS "Project source dir: ${PROJECT_SOURCE_DIR}")
 
 # ---- Main executable ----
 add_executable(run main.cpp)
-target_link_libraries(run ${OpenCV_LIBS} bucket feature utils visualOdometry Frame rgbd_standalone basicFunctions stabilizationFunctions wienerFilter kalmanSplitter videoStabPipeline)
+target_link_libraries(run ${OpenCV_LIBS} bucket feature utils visualOdometry Frame rgbd_standalone basicFunctions stabilizationFunctions wienerFilter kalmanSplitter videoStabPipeline loopclosure_simple)
 
 
 # add_subdirectory(videoStabilization)
