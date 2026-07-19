@@ -2,23 +2,16 @@
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/features2d/features2d.hpp"
 #include "opencv2/calib3d/calib3d.hpp"
-#include "opencv2/video/tracking.hpp"
 
 #include <iostream>
-#include <ctype.h>
-#include <algorithm>
-#include <iterator>
 #include <vector>
 #include <ctime>
-#include <sstream>
-#include <fstream>
 #include <string>
 
 #include "feature.h"
 #include "utils.h"
 #include "evaluate_odometry.h"
 #include "visualOdometry.h"
-#include "Frame.h"
 
 #include "camera_object.h"
 #include "rgbd_standalone.h"
@@ -41,7 +34,6 @@ int main()
     	//~~~~~~~~~~~~~~~~~~~~~~~~~~~Для отображения надписей на кадре~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	int fontFace = FONT_HERSHEY_SIMPLEX;
 
-	//double fontScale = 1.0*min(a,b)/1080;
 	double fontScale = 0.7;
 
 	setlocale(LC_ALL, "RU");
@@ -56,36 +48,17 @@ int main()
         textOrg[i].x = 5;
         textOrg[i].y = 5 + 30 * fontScale * (i + 1);
     }
-
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
+    
     // -----------------------------------------
     // Load images and calibration parameters
     // -----------------------------------------
+    bool computeTest = false;
     bool display_ground_truth = false;
     bool use_intel_rgbd = false;
     bool use_camera = false;
     std::vector<Matrix> pose_matrix_gt;
     
-    // if(argc == 4)
-    // {   display_ground_truth = true;
-    //     cerr << "Display ground truth trajectory" << endl;
-    //     // load ground truth pose
-    //     //string filename_pose = string(argv[3]); ///home/selbizo/CV/dataset/sequences/00/ ../calibration/kitti00.yaml
-    //     string filename_pose = string("/home/selbizo/CV/dataset/sequences/00/");
-    //     pose_matrix_gt = loadPoses(filename_pose);
-    // }
-
-    //string filename_pose = string("/home/selbizo/CV/dataset/sequences/00/");
-    //pose_matrix_gt = loadPoses(filename_pose);
-    // if(argc < 3)
-    // {
-    //     cerr << "Usage: ./run path_to_sequence(rgbd for using intel rgbd) path_to_calibration [optional]path_to_ground_truth_pose" << endl;
-    //     return 1;
-    // }
-
     // Sequence
-    //string filepath = string(argv[1]);
     string filepath = string("/home/selbizo/CV/dataset/sequences/00/");
     cout << "Filepath: " << filepath << endl;
 
@@ -93,32 +66,11 @@ int main()
     if(filepath == "camera") use_camera = true;
 
     // Camera calibration
-    //string strSettingPath = string(argv[2]);
     string strSettingPath = string("../calibration/kitti00.yaml");
     cout << "Calibration Filepath: " << strSettingPath << endl;
 
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
     int frame_skip = 1;
-    
-    float fx = fSettings["Camera.fx"];
-    float fy = fSettings["Camera.fy"];
-    float cx = fSettings["Camera.cx"];
-    float cy = fSettings["Camera.cy"];
-    float bf = fSettings["Camera.bf"];
-
-
-    double MaxShake = 10.0;
-    double framePart = 0.94;
-    fx = fx/framePart;
-    fy = fy/framePart;
-    cx = cx/framePart;
-    cy = cy/framePart;
-
-    bf = bf/framePart;
-    cv::Mat projMatrl = (cv::Mat_<float>(3, 4) << fx, 0., cx, 0., 0., fy, cy, 0., 0,  0., 1., 0.);
-    cv::Mat projMatrr = (cv::Mat_<float>(3, 4) << fx, 0., cx, bf, 0., fy, cy, 0., 0,  0., 1., 0.);
-    cout << "P_left: " << endl << projMatrl << endl;
-    cout << "P_right: " << endl << projMatrr << endl;
 
     // -----------------------------------------
     // Initialize variables
@@ -143,6 +95,7 @@ int main()
     //--------------------------------
     // Initialize variables VideoShake
     //--------------------------------
+    bool shakeEnabled = false;
     Mat Shake(2, 3, CV_64F);
     TransformParam noiseIn = { 0.0, 0.0, 0.0 };
     vector <TransformParam> noiseOut(2);
@@ -184,6 +137,7 @@ int main()
 	cuda::GpuMat gP0Left, gP1Left;
 	cuda::GpuMat gP0Right, gP1Right;
     
+    bool stabEnabled = false;
 	Point2f dLeft = Point2f(0.0f, 0.0f);
 	Point2f dRight = Point2f(0.0f, 0.0f);
 	Point2f meanP0Left = Point2f(0.0f, 0.0f);
@@ -200,7 +154,6 @@ int main()
 	
 	double tauStab = 20.0;
 	double gain = 0.7;
-	//double framePart = 0.95;
 
 	const unsigned int firSize = 4;
     vector <TransformParam> transforms(firSize), movement(firSize), movementKalman(firSize);
@@ -212,64 +165,6 @@ int main()
         movementKalman[i] = {0.0, 0.0, 0.0};        
     }
      
-
-	//init KF
-
-	// System dimensions
-	const int state_dim = 9;  // vx, vy, ax, ay
-	const int meas_dim = 3;   // vx, vy
-
-	// Create system matrices
-	double FPS = 30.0;
-	double dt = 1; //1/ FPS;
-	double dt2 = dt*dt/2;
-	cv::Mat A = (cv::Mat_<double>(state_dim, state_dim) <<
-		1,	0,	dt,	0,	dt2,0,	0,	0,	0,	//vx	
-		0,	1,	0,	dt,	0,	dt2,0,	0,	0,	//vy
-		0,	0,	1,	0,	dt,	0,	0,	0,	0,	//ax
-		0,	0,	0,	1,	0,	dt,	0,	0,	0,	//ay
-		0,	0,	0,	0,	1,	0,	0,	0,	0,	//a2x
-		0,	0,	0,	0,	0,	1,	0,	0,	0,	//a2y
-		0,	0,	0,	0,	0,	0,	1,	dt,	dt2,//vroll
-		0,	0,	0,	0,	0,	0,	0,	1,	dt,	//aroll
-		0,	0,	0,	0,	0,	0,	0,	0,	1	//a2roll 
-		);
-
-	cv::Mat C = (cv::Mat_<double>(meas_dim, state_dim) <<
-		1, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, 1, 0, 0, 0, 0, 0, 0, 0,
-		0, 0, 0, 0, 0, 0, 1, 0, 0
-		);
-	
-	cv::Mat Q = cv::Mat::eye(state_dim, state_dim, CV_64F) * 0.00001;	//low value
-	cv::Mat R = cv::Mat::eye(meas_dim, meas_dim, CV_64F) * 10000.0;		//high value
-	cv::Mat P = cv::Mat::eye(state_dim, state_dim, CV_64F) * 1.0;
-	
-	// Create KF
-	KalmanFilterCV kf(dt, A, C, Q, R, P);
-
-	// Initialize with first measurement
-	cv::Mat x0 = (cv::Mat_<double>(state_dim, 1) << 0,0,0, 0,0,0, 0,0,0);
-	kf.init(0, x0);
-
-	// переменные для фильтра Виннера
-	Mat Hw, h, gray_wiener;
-	cuda::GpuMat gHw, gH, gGrayWiener;
-
-	bool wiener = false;
-	bool threadwiener = false;
-	double nsr = 0.01;
-	double qWiener = 8.0;
-	double LEN = 0;
-	double THETA = 0.0;
-
-	//для обработки трех каналов по Виннеру
-	vector<Mat> channels(3), channelsWiener(3);
-	Mat frame_wiener;
-
-	vector<cuda::GpuMat> gChannels(3), gChannelsWiener(3);
-	cuda::GpuMat gFrameWiener;
-
 	// ~~~~~~~~~~~~~~ для счетчика кадров в секунду ~~~~~~~~~~~~~~~//
 	unsigned int frameCnt = 0;
 	double seconds = 0.05;
@@ -294,8 +189,6 @@ int main()
     cv::Mat imageRight_t0,  imageLeft_t0, imageLeft_stab_t0, imageRight_stab_t0;
     CameraBase *pCamera = NULL;
     cv::VideoCapture captureLeft, captureRight;
-    // cv::VideoCapture captureLeft("http://192.168.8.106:4747/video?640x480");
-    // cv::VideoCapture captureRight("http://192.168.8.107:4747/video?640x480");
     
     cv::Mat imageLeft_t0_color, imageRight_t0_color;
     
@@ -309,9 +202,6 @@ int main()
     {
         captureLeft >> imageLeft_t0_color;
         cvtColor(imageLeft_t0_color, imageLeft_t0, cv::COLOR_BGR2GRAY);
-        
-        //imageLeft_t0_color.copyTo(imageRight_t0_color);
-        // imageLeft_t0.copyTo(imageRight_t0);
         captureRight >> imageRight_t0_color;
         cvtColor(imageRight_t0_color, imageRight_t0, cv::COLOR_BGR2GRAY);
     }
@@ -334,6 +224,28 @@ int main()
 	const int b = imageLeft_t0.rows;
 	const double c = sqrt(a * a + b * b);
 	const double atan_ba = atan2(b, a);
+    
+    float fx = fSettings["Camera.fx"];
+    float fy = fSettings["Camera.fy"];
+    float cx = fSettings["Camera.cx"];
+    float cy = fSettings["Camera.cy"];
+    float bf = fSettings["Camera.bf"];
+    
+    double framePart = 0.98;
+    float dx = a * (1.0 - framePart) / 2.0;
+    float dy = b * (1.0 - framePart) / 2.0;
+    fx = fx/framePart;
+    fy = fy/framePart;
+    cx = cx - dx;
+    cy = cy - dy;
+
+    bf = bf/framePart;
+    cv::Mat projMatrl = (cv::Mat_<float>(3, 4) << fx, 0., cx, 0., 0., fy, cy, 0., 0,  0., 1., 0.);
+    cv::Mat projMatrr = (cv::Mat_<float>(3, 4) << fx, 0., cx, bf, 0., fy, cy, 0., 0,  0., 1., 0.);
+    cout << "P_left: " << endl << projMatrl << endl;
+    cout << "P_right: " << endl << projMatrr << endl;
+
+    double MaxShake = b * (1.0 - framePart) / 2.0;
 
     //переменные для запоминания кадров и характерных точек
 	Mat frameShowOrigLeft(a, b, CV_8UC3),
@@ -396,11 +308,6 @@ int main()
     cv::rectangle(maskSearchRight, Rect(a * (1.0 - 0.5) / compression / 2, b * (1.0 - 0.5) / compression / 2, a * 0.5, b * 0.5 / compression ), 
 		Scalar(255), FILLED); // Прямоугольная маска
     
-	// cv::rectangle(maskSearchLeft, Rect(b * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
-	// 	Scalar(0), FILLED);
-	// cv::rectangle(maskSearchRight, Rect(a * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
-	// 	Scalar(0), FILLED);
-    
 	cuda::GpuMat gMaskSearchLeft(maskSearchLeft);
     cuda::GpuMat gMaskSearchRight(maskSearchRight);
 
@@ -435,19 +342,6 @@ int main()
 	Ptr<cuda::DFT> forwardDFTRight = cuda::createDFT(cv::Size(a, b), DFT_SCALE | DFT_COMPLEX_INPUT);
 	Ptr<cuda::DFT> inverseDFTRight = cuda::createDFT(cv::Size(a, b), DFT_INVERSE | DFT_COMPLEX_INPUT);
 
-    //------------------------------------------
-    // First frame VidStab
-    //------------------------------------------
-
-
-
-
-    //------------------------------------------
-    // END Initialize variables VideoStab
-    //------------------------------------------
-
-
-
 
     // -----------------------------------------
     // Run visual odometry
@@ -480,7 +374,7 @@ int main()
 
     //std::vector<cv::Point2f> oldPointsLeft_t0_stab;
     std::vector<cv::Point2f> pointsLeft_t0_stab, pointsRight_t0_stab, pointsLeft_t1_stab, pointsRight_t1_stab;
-    double crop = framePart;
+    // double crop = framePart;
 
     cv::Vec3f rotation_euler;
     cv::Mat points3D_t0, points4D_t0;
@@ -508,147 +402,118 @@ int main()
             loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id%10000+1, filepath);  //%1+1
             loadImageRight(imageRight_t1_color, imageRight_t1, frame_id%10000+1, filepath);   
         }
-
-        if (frame_id < 80 && frame_skip < 0)
-            frame_skip = 1;
-        if (frame_id > 13000 && frame_skip > 0)
-            frame_skip = -1;
-        noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake))*0.0 + MaxShake*sin(frame_id*DEG_TO_RAD*40.0);
-        //noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake))*0.0 + MaxShake*cos(frame_id*DEG_TO_RAD*20.0);
-        //noiseIn.da = (double)(rng.uniform(-sqrt(MaxShake)/1000, sqrt(MaxShake)/1000)) + 3.0*sqrt(MaxShake)/1000*sin(frame_id*DEG_TO_RAD*10.0);
-
-        //noiseOut[0] = iirNoise(noiseIn, X,Y);
-        noiseOut[0] = noiseIn;
-
-        noiseOut[0].getTransform(Shake);
-        cv::warpAffine(imageLeft_t1, imageLeft_t1, Shake, imageLeft_t1.size());
-        cv::warpAffine(imageRight_t1, imageRight_t1, Shake, imageRight_t1.size());
-        
-		// imageLeft_t1 = imageLeft_t1(roi);
-		// imageRight_t1 = imageRight_t1(roi);
-        
-        cv::resize(imageLeft_t1, imageLeft_t1, cv::Size(a, b), 0.0, 0.0, cv::INTER_CUBIC);
-        cv::resize(imageRight_t1, imageRight_t1, cv::Size(a, b), 0.0, 0.0, cv::INTER_CUBIC);
-        
-        pointsLeft_t0_stab.clear();
-        pointsRight_t0_stab.clear();
-        pointsLeft_t1_stab.clear();
-        pointsRight_t1_stab.clear();
-        
-        matchingFeaturesStab( imageLeft_t0, imageRight_t0,
-                          imageLeft_t1, imageRight_t1, 
-                          currentVOFeatures_stab,
-                          pointsLeft_t0_stab, 
-                          pointsRight_t0_stab, 
-                          pointsLeft_t1_stab, 
-                          pointsRight_t1_stab,
-                          d_features,
-                          0.6);
-
-        cv::Mat tempImagForTest;
-        imageLeft_t1.copyTo(tempImagForTest);
-
-        getBiasAndRotation(pointsLeft_t0_stab, pointsLeft_t1_stab, dLeft, meanP0Left, transforms, TLeft, compression); //перемещение между кадрами оценивается как первая производная
-        std::cout << std::endl << "1 - TLeft = " << std::endl << TLeft<< std::endl;
-                
-        points3D_t0_stab.release();
-        points4D_t0_stab.release();
-        if (pointsLeft_t0_stab.size()>5)
+        if (shakeEnabled == true) //для отладки стабилизации видео можно добавить искусственные дрожания камеры
         {
-            cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t0_stab,  pointsRight_t0_stab,  points4D_t0_stab);
-            cv::convertPointsFromHomogeneous(points4D_t0_stab.t(), points3D_t0_stab);
-            trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0_stab, pointsLeft_t1_stab, points3D_t0_stab, rotation_stab, translation_stab, frame_skip, false);
-            cv::Mat temp_TLeft = (cv::Mat_<double>(2, 3) << 
-            rotation_stab.at<double>(0, 0), rotation_stab.at<double>(0, 1), rotation_stab.at<double>(0, 2),
-            rotation_stab.at<double>(1, 0), rotation_stab.at<double>(1, 1), rotation_stab.at<double>(1, 2));
-            cv::Mat intrinsic_matrix = (cv::Mat_<float>(3, 3) << projMatrl.at<float>(0, 0), projMatrl.at<float>(0, 1), projMatrl.at<float>(0, 2),
-                                            projMatrl.at<float>(1, 0), projMatrl.at<float>(1, 1), projMatrl.at<float>(1, 2),
-                                            projMatrl.at<float>(2, 0), projMatrl.at<float>(2, 1), projMatrl.at<float>(2, 2));
+            noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake))*0.0 + MaxShake*sin(frame_id*DEG_TO_RAD*50.0);
+            noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake))*0.0 + MaxShake*cos(frame_id*DEG_TO_RAD*41.0);
+            noiseIn.da = (double)(rng.uniform(-sqrt(MaxShake)/1000, sqrt(MaxShake)/1000)) + 3.0*sqrt(MaxShake)/1000*sin(frame_id*DEG_TO_RAD*10.0);
 
-            //cv::Mat temp_TLeft_0 = calculateAffineTransformAndPixelShift(rotation_stab, translation_stab, intrinsic_matrix, imageLeft_t1.size());
+            //noiseOut[0] = iirNoise(noiseIn, X,Y);
+            noiseOut[0] = noiseIn;
 
-            //transforms[1] = TransformParam(-temp_TLeft.at<double>(0, 2)*compression, -temp_TLeft.at<double>(1, 2)*compression, -atan2(temp_TLeft.at<double>(1, 0), temp_TLeft.at<double>(0, 0)));
-            std::cout << "2 - TLeft = " << std::endl << temp_TLeft << std::endl;
-            //std::cout << "2 - TLeft_0 = " << std::endl << temp_TLeft_0 << std::endl;
-            std::cout << "3 - rotation_stab = " << std::endl << rotation_stab << std::endl;
-            rotation_euler_stab = rotationMatrixToEulerAngles(rotation_stab);
-            std::cout << "4 - rotation_euler_stab = " << std::endl << rotation_euler_stab << std::endl;
-            std::cout << "5 - transform[1] = [" << transforms[1].dx << " " << transforms[1].dy<< " " << transforms[1].da << "]" << std::endl;
+            noiseOut[0].getTransform(Shake);
+            cv::warpAffine(imageLeft_t1, imageLeft_t1, Shake, imageLeft_t1.size());
+            cv::warpAffine(imageRight_t1, imageRight_t1, Shake, imageRight_t1.size());
+        }
+        if (stabEnabled == true) //для исследования влияния стабилизации видео на визуальную одометрию можно включить стабилизацию видео
+        {
+            pointsLeft_t0_stab.clear();
+            pointsRight_t0_stab.clear();
+            pointsLeft_t1_stab.clear();
+            pointsRight_t1_stab.clear();
+            
+            matchingFeaturesStab( imageLeft_t0, imageRight_t0,
+                            imageLeft_t1, imageRight_t1, 
+                            currentVOFeatures_stab,
+                            pointsLeft_t0_stab, 
+                            pointsRight_t0_stab, 
+                            pointsLeft_t1_stab, 
+                            pointsRight_t1_stab,
+                            d_features,
+                            0.3);
 
+            cv::Mat tempImagForTest;
+            imageLeft_t1.copyTo(tempImagForTest);
 
+            getBiasAndRotation(pointsLeft_t0_stab, pointsLeft_t1_stab, dLeft, meanP0Left, transforms, TLeft, compression); //перемещение между кадрами оценивается как первая производная
+            std::cout << std::endl << "1 - TLeft = " << std::endl << TLeft<< std::endl;
+                    
+            points3D_t0_stab.release();
+            points4D_t0_stab.release();
+            if (pointsLeft_t0_stab.size()>5)
+            {
+                cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t0_stab,  pointsRight_t0_stab,  points4D_t0_stab);
+                cv::convertPointsFromHomogeneous(points4D_t0_stab.t(), points3D_t0_stab);
+                trackingFrame2Frame(projMatrl, projMatrr, pointsLeft_t0_stab, pointsLeft_t1_stab, points3D_t0_stab, rotation_stab, translation_stab, frame_skip, false);
+                cv::Mat temp_TLeft = (cv::Mat_<double>(2, 3) << 
+                rotation_stab.at<double>(0, 0), rotation_stab.at<double>(0, 1), rotation_stab.at<double>(0, 2),
+                rotation_stab.at<double>(1, 0), rotation_stab.at<double>(1, 1), rotation_stab.at<double>(1, 2));
+                cv::Mat intrinsic_matrix = (cv::Mat_<float>(3, 3) << projMatrl.at<float>(0, 0), projMatrl.at<float>(0, 1), projMatrl.at<float>(0, 2),
+                                                projMatrl.at<float>(1, 0), projMatrl.at<float>(1, 1), projMatrl.at<float>(1, 2),
+                                                projMatrl.at<float>(2, 0), projMatrl.at<float>(2, 1), projMatrl.at<float>(2, 2));
+
+            }
+                    
+            if (gain < 1.0)
+            {
+                gain *=1.05;
+                gain+=0.01;
+            } 
+            if (gain > 1.0)
+            {
+                gain = 1.0;
+            }
+            iirAdaptive(transforms, tauStab, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
+
+            displayTracking(tempImagForTest, pointsLeft_t0_stab, pointsLeft_t1_stab, "1) before stab feture points map");
+
+            transforms[0].getTransform(TStabLeft, a, b, c, atan_ba, framePart); // получение текущего компенсирующего преобразования
+            transforms[0].getTransformInvert(TStabInvLeft, a, b, c, atan_ba, framePart); // получение текущего обратного компенсирующего преобразования для отрисовки маски
+
+            gFrameLeft.upload(imageLeft_t1);
+            gFrameRight.upload(imageRight_t1);
+
+            cuda::warpAffine(gFrameLeft,  gFrameStabilizedLeft,  TStabLeft, cv::Size(a, b)); //8ms
+            cuda::warpAffine(gFrameRight, gFrameStabilizedRight, TStabLeft, cv::Size(a, b)); //8ms
+
+            gFrameStabilizatedCropLeft = gFrameStabilizedLeft(roi);
+            gFrameStabilizatedCropRight = gFrameStabilizedRight(roi);
+
+            //cuda::resize(gFrameStabilizatedCropLeft, gImageLeft_t0, cv::Size(a,b));
+            cv::cuda::resize(gFrameStabilizatedCropLeft, gWriterFrameToShowLeft, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
+            cv::cuda::resize(gFrameStabilizatedCropRight, gWriterFrameToShowRight, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
+            gWriterFrameToShowLeft.download(imageLeft_stab_t1);
+            gWriterFrameToShowRight.download(imageRight_stab_t1);
+        } else
+        {
+            gFrameLeft.upload(imageLeft_t1);
+            gFrameRight.upload(imageRight_t1);
+
+            gFrameStabilizatedCropLeft = gFrameLeft(roi);
+            gFrameStabilizatedCropRight = gFrameRight(roi);
+
+            //cuda::resize(gFrameStabilizatedCropLeft, gImageLeft_t0, cv::Size(a,b));
+            cv::cuda::resize(gFrameStabilizatedCropLeft, gWriterFrameToShowLeft, cv::Size(a, b), 0.0, 0.0, cv::INTER_LINEAR);
+            cv::cuda::resize(gFrameStabilizatedCropRight, gWriterFrameToShowRight, cv::Size(a, b), 0.0, 0.0, cv::INTER_LINEAR);
+            gWriterFrameToShowLeft.download(imageLeft_t1);
+            gWriterFrameToShowRight.download(imageRight_t1);
+        }
+        if (computeTest == true)
+        {
+            showServiceInfoSmall(imageLeft_t1_color, 1.0, 1.0, true, true, true, transforms, movementKalman, tauStab, gain, framePart, pointsLeft_t0_stab.max_size(), 1, 1.0, 1.0, 1.0, a, b, textOrg, textOrgOrig, textOrgCrop, textOrgStab, fontFace, fontScale, colorGREEN);
+            imshow("imageLeft_t1_color", imageLeft_t1_color);
 
         }
-        //transforms[1] = TransformParam(-rotation_euler_stab[0]*fx*compression, -rotation_euler_stab[1]*fx*compression, -rotation_euler_stab[2]);
-        
-        iirAdaptiveHighPass(transforms, tauStab, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
-        if (gain < 1.0)
-        {
-            gain *=1.05;
-            gain+=0.01;
-        } 
-        if (gain > 1.0)
-        {
-            gain = 1.0;
-        }
-        //showServiceInfoSmall(tempImagForTest, 1.0, 1.0, true, true, true, transforms, movementKalman, tauStab, gain, framePart, pointsLeft_t0_stab.max_size(), 1, 1.0, 1.0, 1.0, a, b, textOrg, textOrgOrig, textOrgCrop, textOrgStab, fontFace, fontScale, colorBLACK);
-        
-        displayTracking(tempImagForTest, pointsLeft_t0_stab, pointsLeft_t1_stab, "1) test stab point area");
-
-        //kf.update((cv::Mat_<double>(3, 1) << transforms[1].dx, transforms[1].dy, transforms[1].da));
-        kf.update((cv::Mat_<double>(3, 1) << 0.0, 0.0, 0.0));
-
-        cv::Mat state = kf.state();
-        
-        movementKalman[1].dx = state.at<double>(0, 0); //скорость
-        movementKalman[1].dy = state.at<double>(1, 0); //скорость
-        movementKalman[1].da = state.at<double>(6, 0); //скорость
-
-        movementKalman[2].dx = state.at<double>(2, 0); //ускорение
-        movementKalman[2].dy = state.at<double>(3, 0); //ускорение
-        movementKalman[2].da = state.at<double>(7, 0); //ускорение
-
-        movementKalman[3].dx = state.at<double>(4, 0); //вторая производная ускорения
-        movementKalman[3].dy = state.at<double>(5, 0); //вторая производная ускорения
-        movementKalman[3].da = state.at<double>(8, 0); //вторая производная ускорения
-
-        transforms[0].getTransform(TStabLeft, a, b, c, atan_ba, framePart); // получение текущего компенсирующего преобразования
-        transforms[0].getTransformInvert(TStabInvLeft, a, b, c, atan_ba, framePart); // получение текущего обратного компенсирующего преобразования для отрисовки маски
-        
-        // cout << "transforms[1]" << transforms[1].dx << " : " << transforms[1].dy << " : " << transforms[1].da << endl;
-        // cout << "transforms[0]" << transforms[0].dx << " : " << transforms[0].dy << " : " << transforms[0].da << endl;
-        // cout << "noiseOut[0]" << noiseOut[0].dx << " : " << noiseOut[0].dy << " : " << noiseOut[0].da << endl;
-        // cout << "TStabLeft" <<TStabLeft.at<double>(0, 2) << " : " << TStabLeft.at<double>(1, 2) <<endl;
-
-        gFrameLeft.upload(imageLeft_t1);
-        gFrameRight.upload(imageRight_t1);
-
-        cuda::warpAffine(gFrameLeft,  gFrameStabilizedLeft,  TStabLeft, cv::Size(a, b)); //8ms
-        cuda::warpAffine(gFrameRight, gFrameStabilizedRight, TStabLeft, cv::Size(a, b)); //8ms
-
-        gFrameStabilizatedCropLeft = gFrameStabilizedLeft(roi);
-        gFrameStabilizatedCropRight = gFrameStabilizedRight(roi);
-
-        //cuda::resize(gFrameStabilizatedCropLeft, gImageLeft_t0, cv::Size(a,b));
-        cv::cuda::resize(gFrameStabilizatedCropLeft, gWriterFrameToShowLeft, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
-        cv::cuda::resize(gFrameStabilizatedCropRight, gWriterFrameToShowRight, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
-        gWriterFrameToShowLeft.download(imageLeft_stab_t1);
-        gWriterFrameToShowRight.download(imageRight_stab_t1);
-        showServiceInfoSmall(imageLeft_t1_color, 1.0, 1.0, true, true, true, transforms, movementKalman, tauStab, gain, framePart, pointsLeft_t0_stab.max_size(), 1, 1.0, 1.0, 1.0, a, b, textOrg, textOrgOrig, textOrgCrop, textOrgStab, fontFace, fontScale, colorGREEN);
-        
-        imshow("imageLeft_t1_color", imageLeft_t1_color);
-        //imshow("imageLeft_stab_t0", imageLeft_stab_t0);
 
         t_a = clock();
-
-        //oldPointsLeft_t0 = currentVOFeatures.points;
 
         pointsLeft_t0.clear();
         pointsRight_t0.clear();
         pointsLeft_t1.clear();
         pointsRight_t1.clear();
         
-        matchingFeatures( gain > 0.5 ? imageLeft_stab_t0 : imageLeft_t0, gain > 0.5 ? imageRight_stab_t0 : imageRight_t0,
-                          gain > 0.5 ? imageLeft_stab_t1 : imageLeft_t1, gain > 0.5 ? imageRight_stab_t1 : imageRight_t1,
+        matchingFeatures( stabEnabled && gain > 0.5 ? imageLeft_stab_t0 : imageLeft_t0, stabEnabled && gain > 0.5 ? imageRight_stab_t0 : imageRight_t0,
+                          stabEnabled && gain > 0.5 ? imageLeft_stab_t1 : imageLeft_t1, stabEnabled && gain > 0.5 ? imageRight_stab_t1 : imageRight_t1,
                           currentVOFeatures,
                           pointsLeft_t0, 
                           pointsRight_t0, 
@@ -726,13 +591,9 @@ int main()
             last_valid_translation = translation.clone();
         }
 
-        // cv::Mat tempImage;
-        // cv::addWeighted(imageLeft_t1, 0.25, imageRight_t1, 0.25, 1.4, tempImage);
 
-        displayTracking(imageLeft_stab_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
 
-        // displayTracking(imageRight_t1, pointsRight_t0, pointsRight_t1, "vis_right"); //show input image
-        // displayTracking(tempImage, pointsRight_t0, pointsLeft_t0, "vis_both"); //show input image
+        displayTracking(stabEnabled ? imageLeft_stab_t1 : imageLeft_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
 
         // ------------------------------------------------
         // Integrating and display
