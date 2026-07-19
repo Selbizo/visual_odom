@@ -138,7 +138,11 @@ int main()
 	cuda::GpuMat gP0Right, gP1Right;
     
     bool stabEnabled = false;
-	Point2f dLeft = Point2f(0.0f, 0.0f);
+    /*Заключение: 
+    стабилизация ухудшает точность VO, но улучшает визуальное качество видео. 
+    Включать стабилизацию или нет - зависит от задачи.
+    */
+    Point2f dLeft = Point2f(0.0f, 0.0f);
 	Point2f dRight = Point2f(0.0f, 0.0f);
 	Point2f meanP0Left = Point2f(0.0f, 0.0f);
 	Point2f meanP0Right = Point2f(0.0f, 0.0f);
@@ -231,15 +235,15 @@ int main()
     float cy = fSettings["Camera.cy"];
     float bf = fSettings["Camera.bf"];
     
-    double framePart = 0.98;
-    float dx = a * (1.0 - framePart) / 2.0;
-    float dy = b * (1.0 - framePart) / 2.0;
-    fx = fx/framePart;
-    fy = fy/framePart;
-    cx = cx - dx;
-    cy = cy - dy;
-
-    bf = bf/framePart;
+    double framePart = 1.0;
+    if (framePart < 1.0)
+    {
+        fx = fx/framePart;
+        fy = fy/framePart;
+        cx = cx - (a * (1.0 - framePart) / 2.0);
+        cy = cy - (b * (1.0 - framePart) / 2.0);
+        bf = bf/framePart;
+    }
     cv::Mat projMatrl = (cv::Mat_<float>(3, 4) << fx, 0., cx, 0., 0., fy, cy, 0., 0,  0., 1., 0.);
     cv::Mat projMatrr = (cv::Mat_<float>(3, 4) << fx, 0., cx, bf, 0., fy, cy, 0., 0,  0., 1., 0.);
     cout << "P_left: " << endl << projMatrl << endl;
@@ -484,15 +488,13 @@ int main()
             cv::cuda::resize(gFrameStabilizatedCropRight, gWriterFrameToShowRight, cv::Size(a, b), 0.0, 0.0, cv::INTER_NEAREST);
             gWriterFrameToShowLeft.download(imageLeft_stab_t1);
             gWriterFrameToShowRight.download(imageRight_stab_t1);
-        } else
+        } else if (framePart < 1.0)
         {
             gFrameLeft.upload(imageLeft_t1);
             gFrameRight.upload(imageRight_t1);
 
             gFrameStabilizatedCropLeft = gFrameLeft(roi);
             gFrameStabilizatedCropRight = gFrameRight(roi);
-
-            //cuda::resize(gFrameStabilizatedCropLeft, gImageLeft_t0, cv::Size(a,b));
             cv::cuda::resize(gFrameStabilizatedCropLeft, gWriterFrameToShowLeft, cv::Size(a, b), 0.0, 0.0, cv::INTER_LINEAR);
             cv::cuda::resize(gFrameStabilizatedCropRight, gWriterFrameToShowRight, cv::Size(a, b), 0.0, 0.0, cv::INTER_LINEAR);
             gWriterFrameToShowLeft.download(imageLeft_t1);
@@ -602,7 +604,7 @@ int main()
 
         rigid_body_transformation.release();
 
-        if(abs(rotation_euler[1])<0.4*MaxShake*abs(frame_skip) && abs(rotation_euler[0])<0.4*MaxShake*abs(frame_skip) && abs(rotation_euler[2])<0.4*MaxShake*abs(frame_skip))
+        if(abs(rotation_euler[1])<0.4*(MaxShake + 2)*abs(frame_skip) && abs(rotation_euler[0])<0.4*(MaxShake + 2)*abs(frame_skip) && abs(rotation_euler[2])<0.4*(MaxShake + 2)*abs(frame_skip))
         {
             integrateOdometryStereo(frame_id, rigid_body_transformation, frame_pose, 
                                rotation, translation);
