@@ -439,15 +439,12 @@ void LoopClosure::applyCorrectionToKeyframes() {
         return;
     }
     
-    KeyFrame& current_kf = keyframes_.back();
-    if (!current_kf.is_keyframe) {
-        return;
-    }
-    
     cv::Mat R_corr = loop_rotation_;
     cv::Mat t_corr = loop_translation_;
     
-    for (auto& kf : keyframes_) {
+    for (size_t i = 0; i < keyframes_.size() - 1; i++) {
+        KeyFrame& kf = keyframes_[i];
+        
         cv::Mat R_old = kf.rotation;
         cv::Mat t_old = kf.translation;
         
@@ -461,6 +458,8 @@ void LoopClosure::applyCorrectionToKeyframes() {
         R_new.copyTo(kf.full_pose(cv::Rect(0, 0, 3, 3)));
         t_new.copyTo(kf.full_pose(cv::Rect(3, 0, 1, 3)));
     }
+    
+    std::cout << "[LoopClosure] Corrected " << keyframes_.size() - 1 << " keyframes" << std::endl;
 }
 
 std::vector<KeyFrame> LoopClosure::getKeyframes() {

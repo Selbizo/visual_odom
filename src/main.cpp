@@ -82,7 +82,9 @@ int main()
     cv::Mat pose = cv::Mat::zeros(3, 1, CV_64F);
     cv::Mat Rpose = cv::Mat::eye(3, 3, CV_64F);
     
-    cv::Mat frame_pose = cv::Mat::eye(4, 4, CV_64F);
+    cv::Mat frame_pose;
+    frame_pose.create(4, 4, CV_64F);
+    frame_pose = cv::Mat::eye(4, 4, CV_64F);
     cv::Mat frame_pose32 = cv::Mat::eye(4, 4, CV_32F);
 
     std::cout << "frame_pose " << frame_pose << std::endl;
@@ -639,21 +641,68 @@ int main()
                     std::cout << "[LoopClosure] LOOP DETECTED! Frame: " << frame_id 
                               << ", Candidate: " << loopClosure.getCandidateKeyframeId() << std::endl;
                     
-                    loopClosure.applyCorrectionToKeyframes();
-                    
                     loop_detected = true;
                     last_loop_frame_id = frame_id;
                     
-                    cv::Mat correction = loopClosure.getLoopCorrection();
-                    std::cout << "[LoopClosure] Correction applied" << std::endl;
+                    std::cout << "[LoopClosure] Loop correction ready to apply" << std::endl;
                 } else {
                     std::cout << "[LoopClosure] No loop detected at frame " << frame_id << std::endl;
                 }
             }
         }
         
-        if (loop_detected && frame_id < last_loop_frame_id + 100) {
-            continue;
+        if (loop_detected) {
+            std::cout << "[Main] Applying loop closure correction at frame " << frame_id << std::endl;
+            
+            cv::Mat R_corr = loopClosure.getLoopRotation();
+            cv::Mat t_corr = loopClosure.getLoopTranslation();
+            
+            std::cout << "[Main] Loop correction rotation: " << R_corr << std::endl;
+            std::cout << "[Main] Loop correction translation: " << t_corr << std::endl;
+            
+            int candidate_id = loopClosure.getCandidateKeyframeId();
+            std::cout << "[Main] Candidate keyframe ID: " << candidate_id << std::endl;
+            
+            if (std::abs(t_corr.at<double>(0)) > 1000 || std::abs(t_corr.at<double>(1)) > 1000 || std::abs(t_corr.at<double>(2)) > 1000) {
+                std::cout << "[Main] Correction translation is too large, skipping loop closure" << std::endl;
+                loop_detected = false;
+                continue;
+            }
+            
+            cv::Mat correction_inv = cv::Mat::eye(4, 4, CV_64F);
+            R_corr.copyTo(correction_inv(cv::Rect(0, 0, 3, 3)));
+            t_corr.copyTo(correction_inv(cv::Rect(3, 0, 1, 3)));
+            correction_inv = correction_inv.inv();
+            
+            cv::Mat new_R = correction_inv(cv::Rect(0, 0, 3, 3)).clone();
+            cv::Mat new_t = correction_inv(cv::Rect(3, 0, 1, 3)).clone();
+            
+            std::cout << "[Main] Creating new_frame_pose..." << std::endl;
+            cv::Mat new_frame_pose;
+            new_frame_pose.create(4, 4, CV_64F);
+            std::cout << "[Main] new_frame_pose created" << std::endl;
+            
+            std::cout << "[Main] Setting identity..." << std::endl;
+            new_frame_pose = cv::Mat::eye(4, 4, CV_64F);
+            std::cout << "[Main] Identity set" << std::endl;
+            
+            std::cout << "[Main] Copying rotation..." << std::endl;
+            new_R.copyTo(new_frame_pose(cv::Rect(0, 0, 3, 3)));
+            std::cout << "[Main] Rotation copied" << std::endl;
+            
+            std::cout << "[Main] Copying translation..." << std::endl;
+            new_frame_pose.at<double>(0, 3) = new_t.at<double>(0);
+            new_frame_pose.at<double>(1, 3) = new_t.at<double>(1);
+            new_frame_pose.at<double>(2, 3) = new_t.at<double>(2);
+            std::cout << "[Main] Translation copied" << std::endl;
+            
+            std::cout << "[Main] Assigning to frame_pose..." << std::endl;
+            frame_pose = new_frame_pose;
+            std::cout << "[Main] frame_pose assigned" << std::endl;
+            
+            std::cout << "[Main] Loop closure applied, new pose: " << frame_pose.col(3) << std::endl;
+            
+            loop_detected = false;
         }
 
         // ------------------------------------------------
