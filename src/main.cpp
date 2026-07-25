@@ -12,6 +12,7 @@
 #include "utils.h"
 #include "evaluate_odometry.h"
 #include "visualOdometry.h"
+#include "loopclosure.h"
 
 #include "camera_object.h"
 #include "rgbd_standalone.h"
@@ -91,6 +92,9 @@ int main()
     FeatureSet currentVOFeatures_stab;
     cv::Mat points4D, points3D;
     int init_frame_id = 0;
+    
+    bool loop_detected = false;
+    int last_loop_frame_id = -100;
 
     //--------------------------------
     // Initialize variables VideoShake
@@ -248,6 +252,10 @@ int main()
     cv::Mat projMatrr = (cv::Mat_<float>(3, 4) << fx, 0., cx, bf, 0., fy, cy, 0., 0,  0., 1., 0.);
     cout << "P_left: " << endl << projMatrl << endl;
     cout << "P_right: " << endl << projMatrr << endl;
+    
+    LoopClosure loopClosure;
+    loopClosure.setCameraParameters(projMatrl, projMatrr);
+    loopClosure.setParameters(30, 0.7f, 0.85f, 5, 20);
 
     double MaxShake = b * (1.0 - framePart) / 2.0;
 
@@ -596,6 +604,46 @@ int main()
 
 
         displayTracking(stabEnabled ? imageLeft_stab_t1 : imageLeft_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
+
+        // ------------------------------------------------
+        // Loop closure detection
+        // ------------------------------------------------
+        if (frame_id - last_loop_frame_id > 100 && points3D_t0.rows >= 50) {
+            loopClosure.addFrame(frame_id, imageLeft_t1, imageRight_t1,
+                               pointsLeft_t0, pointsRight_t0,
+                               rotation, translation, points3D_t0);
+            
+            if (loopClosure.detectLoop()) {
+                loop_detected = true;
+                last_loop_frame_id = frame_id;
+                std::cout << "[LoopClosure] Loop detected! Correcting pose..." << std::endl;
+                
+                cv::Mat R_corr = loopClosure.getLoopRotation();
+                cv::Mat t_corr = loopClosure.getLoopTranslation();
+                
+                std::cout << "[LoopClosure] Correction rotation: " << R_corr << std::endl;
+                std::cout << "[LoopClosure] Correction translation: " << t_corr << std::endl;
+                
+                cv::Mat corrected_rotation = R_corr * rotation;
+                cv::Mat corrected_translation = R_corr * translation + t_corr;
+                
+                rotation_euler = rotationMatrixToEulerAngles(corrected_rotation);
+
+                rigid_body_transformation.release();
+
+                if(abs(rotation_euler[1])<0.4*(MaxShake + 2)*abs(frame_skip) && 
+                   abs(rotation_euler[0])<0.4*(MaxShake + 2)*abs(frame_skip) && 
+                   abs(rotation_euler[2])<0.4*(MaxShake + 2)*abs(frame_skip))
+                {
+                    integrateOdometryStereo(frame_id, rigid_body_transformation, frame_pose, 
+                                       corrected_rotation, corrected_translation);
+                }
+            }
+        }
+        
+        if (loop_detected) {
+            loop_detected = false;
+        }
 
         // ------------------------------------------------
         // Integrating and display
