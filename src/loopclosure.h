@@ -46,11 +46,15 @@ public:
                        int max_weak_candidates = 5,
                        int min_match_count = 20);
     
+    // world_pose: 4x4 CV_64F ACCUMULATED pose (frame_pose) of this frame in world/start
+    // coordinates. This is REQUIRED for loop-closure correction math to be correct -
+    // passing the frame-to-frame incremental rotation/translation here (as before) is wrong.
     bool addFrame(int frame_id, const cv::Mat& image_left, const cv::Mat& image_right,
                   const std::vector<cv::Point2f>& keypoints_left,
                   const std::vector<cv::Point2f>& keypoints_right,
                   const cv::Mat& rotation, const cv::Mat& translation,
-                  const cv::Mat& points3D, bool force_keyframe = false);
+                  const cv::Mat& points3D, const cv::Mat& world_pose,
+                  bool force_keyframe = false);
     
     bool detectLoop();
     
@@ -101,6 +105,8 @@ private:
     int current_keyframe_id_;
     bool loop_detected_;
     int candidate_keyframe_id_;
+    int candidate_index_;   // index of matched candidate inside keyframes_ (needed to
+                             // interpolate the correction only over the affected span)
     bool needs_correction_;
     
     cv::Mat loop_rotation_;

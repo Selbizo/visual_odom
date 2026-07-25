@@ -13,6 +13,7 @@ LoopClosure::LoopClosure()
       current_keyframe_id_(0),
       loop_detected_(false),
       candidate_keyframe_id_(-1),
+      candidate_index_(-1),
       needs_correction_(false) {
     
     std::string model_path = "/home/selbizo/CV/StabAndSLAM/visual_odom/src/dnn_weights/mobilenet_v2_simplified.onnx";
@@ -186,7 +187,7 @@ bool LoopClosure::matchDescriptors(const cv::Mat& desc1, const cv::Mat& desc2,
 }
 
 float LoopClosure::computeSimilarity(const cv::Mat& vec1, const cv::Mat& vec2) {
-    std::cerr << "[LoopClosure] computeSimilarity called: vec1=" << vec1.size() << " vec2=" << vec2.size() << std::endl;
+    // std::cerr << "[LoopClosure] computeSimilarity called: vec1=" << vec1.size() << " vec2=" << vec2.size() << std::endl;
     
     if (vec1.empty() || vec2.empty()) {
         std::cerr << "[LoopClosure] computeSimilarity: empty input" << std::endl;
@@ -201,17 +202,17 @@ float LoopClosure::computeSimilarity(const cv::Mat& vec1, const cv::Mat& vec2) {
     cv::Mat v1 = vec1.reshape(1, 1);
     cv::Mat v2 = vec2.reshape(1, 1);
     
-    std::cerr << "[LoopClosure] computeSimilarity: v1=" << v1.size() << " v2=" << v2.size() << std::endl;
+    // std::cerr << "[LoopClosure] computeSimilarity: v1=" << v1.size() << " v2=" << v2.size() << std::endl;
     
     if (v1.cols != v2.cols) {
-        std::cerr << "[LoopClosure] computeSimilarity: column mismatch " << v1.cols << " vs " << v2.cols << std::endl;
+        // std::cerr << "[LoopClosure] computeSimilarity: column mismatch " << v1.cols << " vs " << v2.cols << std::endl;
         return 0.0f;
     }
     
     int len = v1.cols;
     float sum = 0.0f;
     
-    std::cerr << "[LoopClosure] computeSimilarity: computing dot product of length " << len << std::endl;
+    // std::cerr << "[LoopClosure] computeSimilarity: computing dot product of length " << len << std::endl;
     
     if (v1.type() == CV_32F) {
         const float* p1 = v1.ptr<float>();
@@ -230,7 +231,7 @@ float LoopClosure::computeSimilarity(const cv::Mat& vec1, const cv::Mat& vec2) {
         return 0.0f;
     }
     
-    std::cerr << "[LoopClosure] computeSimilarity: result=" << sum << std::endl;
+    // std::cerr << "[LoopClosure] computeSimilarity: result=" << sum << std::endl;
     
     return sum;
 }
@@ -271,7 +272,8 @@ bool LoopClosure::addFrame(int frame_id, const cv::Mat& image_left, const cv::Ma
                             const std::vector<cv::Point2f>& keypoints_left,
                             const std::vector<cv::Point2f>& keypoints_right,
                             const cv::Mat& rotation, const cv::Mat& translation,
-                            const cv::Mat& points3D, bool force_keyframe) {
+                            const cv::Mat& points3D, const cv::Mat& world_pose,
+                            bool force_keyframe) {
     std::lock_guard<std::mutex> lock(keyframe_mutex_);
     
     bool is_kf = force_keyframe || isKeyframe(points3D, min_keypoints_);
@@ -285,9 +287,20 @@ bool LoopClosure::addFrame(int frame_id, const cv::Mat& image_left, const cv::Ma
     kf.points3D = points3D;
     kf.is_keyframe = is_kf;
     
-    kf.full_pose = cv::Mat::eye(4, 4, CV_64F);
-    rotation.copyTo(kf.full_pose(cv::Rect(0, 0, 3, 3)));
-    translation.copyTo(kf.full_pose(cv::Rect(3, 0, 1, 3)));
+    // IMPORTANT: full_pose must be the ACCUMULATED world pose of this frame (frame_pose
+    // in main.cpp), NOT the frame-to-frame incremental rotation/translation. The loop
+    // correction math below relies on candidate_kf.full_pose / current_kf.full_pose being
+    // expressed in the same, consistent world coordinate system.
+    if (world_pose.rows == 4 && world_pose.cols == 4) {
+        kf.full_pose = world_pose.clone();
+        if (kf.full_pose.type() != CV_64F) {
+            kf.full_pose.convertTo(kf.full_pose, CV_64F);
+        }
+    } else {
+        std::cerr << "[LoopClosure] WARNING: world_pose is not 4x4, falling back to identity "
+                   "for keyframe " << frame_id << " (loop correction will be unreliable)" << std::endl;
+        kf.full_pose = cv::Mat::eye(4, 4, CV_64F);
+    }
     
     if (is_kf) {
         cv::Mat orb_descriptors;
@@ -358,12 +371,12 @@ bool LoopClosure::detectLoop() {
         }
         
         float similarity = computeSimilarity(current_desc, kf.descriptor);
-        std::cout << "[LoopClosure] Comparing frame " << current_kf.id << " with " << kf.id << ": similarity=" << similarity << std::endl;
+        // std::cout << "[LoopClosure] Comparing frame " << current_kf.id << " with " << kf.id << ": similarity=" << similarity << std::endl;
         
-        if (similarity > 0.7f) {
-            std::cout << "[LoopClosure] Potential match: current=" << current_kf.id 
-                      << ", candidate=" << kf.id << ", similarity=" << similarity << std::endl;
-        }
+        // if (similarity > 0.7f) {
+        //     std::cout << "[LoopClosure] Potential match: current=" << current_kf.id 
+        //               << ", candidate=" << kf.id << ", similarity=" << similarity << std::endl;
+        // }
         
         if (similarity > max_similarity) {
             max_similarity = similarity;
@@ -417,15 +430,44 @@ bool LoopClosure::detectLoop() {
         return false;
     }
     
-    loop_rotation_ = R_correction.clone();
-    loop_translation_ = t_correction.clone();
+    // R_correction/t_correction from solvePnPRansac describe the CURRENT camera pose
+    // expressed in the CANDIDATE keyframe's own LOCAL coordinate frame (because
+    // candidate_kf.points3D were triangulated relative to the candidate camera at
+    // capture time). This is NOT yet a world-frame correction - it must be composed
+    // with the candidate's known world pose to find out where the current frame
+    // *should* be in world coordinates, and compared against where odometry drift
+    // currently thinks it is.
+    cv::Mat T_pnp = cv::Mat::eye(4, 4, CV_64F);
+    R_correction.copyTo(T_pnp(cv::Rect(0, 0, 3, 3)));
+    t_correction.copyTo(T_pnp(cv::Rect(3, 0, 1, 3)));
     
-    cv::Mat T = cv::Mat::eye(4, 4, CV_64F);
-    R_correction.copyTo(T(cv::Rect(0, 0, 3, 3)));
-    t_correction.copyTo(T(cv::Rect(3, 0, 1, 3)));
-    T.copyTo(loop_correction_);
+    if (candidate_kf.full_pose.empty() || current_kf.full_pose.empty()) {
+        std::cerr << "[LoopClosure] Missing world pose on keyframe(s), cannot correct." << std::endl;
+        return false;
+    }
+    
+    // Where the current frame SHOULD be in world coordinates, according to the loop match:
+    cv::Mat T_current_estimated_world = candidate_kf.full_pose * T_pnp;
+    
+    // Where odometry (with accumulated drift) currently thinks the current frame is:
+    cv::Mat T_current_naive_world = current_kf.full_pose;
+    
+    double det = cv::determinant(T_current_naive_world(cv::Rect(0, 0, 3, 3)));
+    if (std::abs(det) < 1e-9) {
+        std::cerr << "[LoopClosure] Degenerate current world pose, skipping correction." << std::endl;
+        return false;
+    }
+    
+    // Correction delta (world frame) that removes the accumulated drift between
+    // candidate and current:
+    cv::Mat T_delta = T_current_estimated_world * T_current_naive_world.inv();
+    
+    loop_rotation_ = T_delta(cv::Rect(0, 0, 3, 3)).clone();
+    loop_translation_ = T_delta(cv::Rect(3, 0, 1, 3)).clone();
+    loop_correction_ = T_delta.clone();
     
     candidate_keyframe_id_ = candidate_kf.id;
+    candidate_index_ = static_cast<int>(max_sim_index);
     loop_detected_ = true;
     needs_correction_ = true;
     
@@ -435,31 +477,63 @@ bool LoopClosure::detectLoop() {
 void LoopClosure::applyCorrectionToKeyframes() {
     std::lock_guard<std::mutex> lock(keyframe_mutex_);
     
-    if (!needs_correction_ || keyframes_.empty()) {
+    if (!needs_correction_ || keyframes_.empty() || candidate_index_ < 0) {
         return;
     }
     
-    cv::Mat R_corr = loop_rotation_;
-    cv::Mat t_corr = loop_translation_;
+    int current_index = static_cast<int>(keyframes_.size()) - 1;
+    int span = current_index - candidate_index_;
     
-    for (size_t i = 0; i < keyframes_.size() - 1; i++) {
-        KeyFrame& kf = keyframes_[i];
-        
-        cv::Mat R_old = kf.rotation;
-        cv::Mat t_old = kf.translation;
-        
-        cv::Mat R_new = R_corr * R_old;
-        cv::Mat t_new = R_corr * t_old + t_corr;
-        
-        kf.rotation = R_new.clone();
-        kf.translation = t_new.clone();
-        
-        kf.full_pose = cv::Mat::eye(4, 4, CV_64F);
-        R_new.copyTo(kf.full_pose(cv::Rect(0, 0, 3, 3)));
-        t_new.copyTo(kf.full_pose(cv::Rect(3, 0, 1, 3)));
+    if (span <= 0) {
+        return;
     }
     
-    std::cout << "[LoopClosure] Corrected " << keyframes_.size() - 1 << " keyframes" << std::endl;
+    // Keyframes at/before the candidate are treated as the trusted anchor and are left
+    // untouched. Keyframes strictly between candidate and current get a correction that
+    // is linearly interpolated from 0 (at the candidate) up to the full delta (at the
+    // current frame), instead of slamming the *entire* history (including the trusted
+    // anchor) with the same rigid transform. This is a simplified stand-in for real
+    // pose-graph optimization (no g2o in this project), but avoids re-warping keyframes
+    // that were already correct.
+    cv::Mat R_delta = loop_correction_(cv::Rect(0, 0, 3, 3));
+    cv::Mat t_delta = loop_correction_(cv::Rect(3, 0, 1, 3));
+    cv::Mat rvec_delta;
+    cv::Rodrigues(R_delta, rvec_delta);
+    
+    int corrected_count = 0;
+    for (int i = candidate_index_ + 1; i < current_index; i++) {
+        double alpha = static_cast<double>(i - candidate_index_) / static_cast<double>(span);
+        
+        cv::Mat rvec_partial = rvec_delta * alpha;
+        cv::Mat R_partial;
+        cv::Rodrigues(rvec_partial, R_partial);
+        cv::Mat t_partial = t_delta * alpha;
+        
+        cv::Mat T_partial = cv::Mat::eye(4, 4, CV_64F);
+        R_partial.copyTo(T_partial(cv::Rect(0, 0, 3, 3)));
+        t_partial.copyTo(T_partial(cv::Rect(3, 0, 1, 3)));
+        
+        KeyFrame& kf = keyframes_[i];
+        cv::Mat new_pose = T_partial * kf.full_pose;
+        new_pose.copyTo(kf.full_pose);
+        kf.rotation = kf.full_pose(cv::Rect(0, 0, 3, 3)).clone();
+        kf.translation = kf.full_pose(cv::Rect(3, 0, 1, 3)).clone();
+        corrected_count++;
+    }
+    
+    // The current (last) keyframe gets the FULL delta - this must be kept consistent
+    // with whatever main.cpp applies to its own live frame_pose for this frame.
+    {
+        KeyFrame& kf = keyframes_[current_index];
+        cv::Mat new_pose = loop_correction_ * kf.full_pose;
+        new_pose.copyTo(kf.full_pose);
+        kf.rotation = kf.full_pose(cv::Rect(0, 0, 3, 3)).clone();
+        kf.translation = kf.full_pose(cv::Rect(3, 0, 1, 3)).clone();
+    }
+    
+    std::cout << "[LoopClosure] Interpolated correction applied to " << corrected_count
+               << " keyframes between candidate " << keyframes_[candidate_index_].id
+               << " and current " << keyframes_[current_index].id << std::endl;
 }
 
 std::vector<KeyFrame> LoopClosure::getKeyframes() {

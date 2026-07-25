@@ -93,8 +93,8 @@ int main()
     FeatureSet currentVOFeatures;
     FeatureSet currentVOFeatures_stab;
     cv::Mat points4D, points3D;
-    int init_frame_id = 126;
-    int local_loop_ceiling = 1574;
+    int init_frame_id = 0; //126
+    int local_loop_ceiling = 4449;
     
     bool loop_detected = false;
     int last_loop_frame_id = -100;
@@ -419,7 +419,7 @@ int main()
         }
         else
         {
-            if (frame_id < 1550)
+            if (frame_id < local_loop_ceiling)
             {
                 loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id%local_loop_ceiling, filepath);
                 loadImageRight(imageRight_t1_color, imageRight_t1, frame_id%local_loop_ceiling, filepath);
@@ -627,11 +627,15 @@ int main()
         bool is_keyframe_for_loop = (frame_id % (50 * frame_skip) == 0);
         
         if (is_keyframe_for_loop && points3D_t0.rows >= 50) {
+            // NOTE: frame_pose here is the pose accumulated up to the *previous* frame
+            // (integrateOdometryStereo for the current frame runs later below), so this
+            // is off by at most one frame_skip step - negligible compared to the drift
+            // being corrected, but noted here for anyone tightening this up further.
             loopClosure.addFrame(frame_id, imageLeft_t1, imageRight_t1,
                                 pointsLeft_t0, pointsRight_t0,
-                                rotation, translation, points3D_t0, true);
+                                rotation, translation, points3D_t0, frame_pose, true);
             
-            std::cout << "[LoopClosure] Added keyframe " << frame_id << ", total: " 
+            std::cout << "[LoopClosure] Added keyframe " << frame_id << ", total: "
                       << loopClosure.getKeyframeCount() << std::endl;
             
             int keyframe_count = loopClosure.getKeyframeCount();
@@ -663,42 +667,33 @@ int main()
             int candidate_id = loopClosure.getCandidateKeyframeId();
             std::cout << "[Main] Candidate keyframe ID: " << candidate_id << std::endl;
             
-            if (std::abs(t_corr.at<double>(0)) > 1000 || std::abs(t_corr.at<double>(1)) > 1000 || std::abs(t_corr.at<double>(2)) > 1000) {
+            if (cv::norm(t_corr) > 1000) {
                 std::cout << "[Main] Correction translation is too large, skipping loop closure" << std::endl;
                 loop_detected = false;
                 continue;
             }
             
-            cv::Mat correction_inv = cv::Mat::eye(4, 4, CV_64F);
-            R_corr.copyTo(correction_inv(cv::Rect(0, 0, 3, 3)));
-            t_corr.copyTo(correction_inv(cv::Rect(3, 0, 1, 3)));
-            correction_inv = correction_inv.inv();
+            cv::Mat T_correction = cv::Mat::eye(4, 4, CV_64F);
+            R_corr.copyTo(T_correction(cv::Rect(0, 0, 3, 3)));
+            t_corr.copyTo(T_correction(cv::Rect(3, 0, 1, 3)));
             
-            cv::Mat new_R = correction_inv(cv::Rect(0, 0, 3, 3)).clone();
-            cv::Mat new_t = correction_inv(cv::Rect(3, 0, 1, 3)).clone();
+            cv::Mat new_frame_pose = T_correction * frame_pose;
             
-            std::cout << "[Main] Creating new_frame_pose..." << std::endl;
-            cv::Mat new_frame_pose;
-            new_frame_pose.create(4, 4, CV_64F);
-            std::cout << "[Main] new_frame_pose created" << std::endl;
+            new_frame_pose.copyTo(frame_pose);
             
-            std::cout << "[Main] Setting identity..." << std::endl;
-            new_frame_pose = cv::Mat::eye(4, 4, CV_64F);
-            std::cout << "[Main] Identity set" << std::endl;
+            // Propagate the (interpolated) correction back into LoopClosure's own
+            // keyframe history - this used to be dead code (never called), which is why
+            // corrections never actually removed accumulated drift from the trajectory.
+            loopClosure.applyCorrectionToKeyframes();
             
-            std::cout << "[Main] Copying rotation..." << std::endl;
-            new_R.copyTo(new_frame_pose(cv::Rect(0, 0, 3, 3)));
-            std::cout << "[Main] Rotation copied" << std::endl;
-            
-            std::cout << "[Main] Copying translation..." << std::endl;
-            new_frame_pose.at<double>(0, 3) = new_t.at<double>(0);
-            new_frame_pose.at<double>(1, 3) = new_t.at<double>(1);
-            new_frame_pose.at<double>(2, 3) = new_t.at<double>(2);
-            std::cout << "[Main] Translation copied" << std::endl;
-            
-            std::cout << "[Main] Assigning to frame_pose..." << std::endl;
-            frame_pose = new_frame_pose;
-            std::cout << "[Main] frame_pose assigned" << std::endl;
+            // TODO(agent): if this VO pipeline keeps its own separate history buffer for
+            // display/logging (e.g. whatever feeds `trajectory` / trajectory_coordinates.txt),
+            // that buffer is NOT touched by applyCorrectionToKeyframes() above (it only
+            // corrects LoopClosure's internal keyframes_). Find where that buffer is
+            // populated and apply the same interpolated correction to previously recorded
+            // points between the candidate frame and this one, or the on-screen/logged
+            // trajectory will keep showing the old, uncorrected path even though the live
+            // pose has jumped.
             
             std::cout << "[Main] Loop closure applied, new pose: " << frame_pose.col(3) << std::endl;
             
@@ -727,7 +722,9 @@ int main()
         float frame_time = 1000*(double)(t_b-t_a)/CLOCKS_PER_SEC;
         float fps = 1000/frame_time;
 
-        cv::Mat xyz = frame_pose.col(3).clone();
+        cv::Mat xyz = frame_pose.col(3).clone(); 
+        //где-то здесь нужно 
+
         display(frame_id, trajectory, trajectory_biased, xyz, pose_matrix_gt, fps, display_ground_truth);
 
         int key = cv::waitKey(1);

@@ -20,7 +20,7 @@ void drawFeaturePoints(cv::Mat image, std::vector<cv::Point2f>& points)
 void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::Mat& pose, std::vector<Matrix>& pose_matrix_gt, float fps, bool show_gt)
 {
     static std::ofstream coord_file("/home/selbizo/CV/StabAndSLAM/visual_odom/trajectory_coordinates.txt");
-    if (coord_file.is_open() && frame_id%13 == 0) {
+    if (coord_file.is_open() && frame_id%17 == 0) {
         coord_file << frame_id << " " 
                    << pose.at<double>(0) << " " 
                    << pose.at<double>(1) << " " 
