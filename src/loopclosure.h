@@ -14,19 +14,22 @@
 #include <memory>
 #include <string>
 
+#include "Frame.h"
+
 struct KeyFrame {
     int id;
     cv::Mat image;
     cv::Mat depth;
-    cv::Mat descriptor;
+    cv::Mat descriptor;       // Deep learning features (1000-dim)
+    cv::Mat orb_descriptor;   // ORB keypoint descriptors (256-dim per descriptor)
     std::vector<int> desc_feat_indx;
-    cv::Mat pose;
     cv::Mat rotation;
     cv::Mat translation;
     std::vector<cv::Point2f> keypoints;
     std::vector<cv::Point3f> points3D;
     std::vector<cv::Point2f> keypoints_matched;
     bool is_keyframe;
+    cv::Mat full_pose; // 4x4 transformation matrix
     
     KeyFrame() : id(0), is_keyframe(false) {}
 };
@@ -47,7 +50,7 @@ public:
                   const std::vector<cv::Point2f>& keypoints_left,
                   const std::vector<cv::Point2f>& keypoints_right,
                   const cv::Mat& rotation, const cv::Mat& translation,
-                  const cv::Mat& points3D);
+                  const cv::Mat& points3D, bool force_keyframe = false);
     
     bool detectLoop();
     
@@ -61,6 +64,11 @@ public:
     int getCandidateKeyframeId() const { return candidate_keyframe_id_; }
     
     bool needsCorrection() const { return needs_correction_; }
+    
+    void applyCorrectionToKeyframes();
+    std::vector<KeyFrame> getKeyframes();
+    int getKeyframeCount();
+    int getRawKeyframeCount();
     
 private:
     bool extractDeepFeatures(const cv::Mat& image, cv::Mat& feature_vec);

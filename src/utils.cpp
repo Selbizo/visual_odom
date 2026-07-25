@@ -1,5 +1,6 @@
 #include "utils.h"
 #include "evaluate_odometry.h"
+#include <fstream>
 
 
 
@@ -18,10 +19,18 @@ void drawFeaturePoints(cv::Mat image, std::vector<cv::Point2f>& points)
 
 void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::Mat& pose, std::vector<Matrix>& pose_matrix_gt, float fps, bool show_gt)
 {
+    static std::ofstream coord_file("/home/selbizo/CV/StabAndSLAM/visual_odom/trajectory_coordinates.txt");
+    if (coord_file.is_open()) {
+        coord_file << frame_id << " " 
+                   << pose.at<double>(0) << " " 
+                   << pose.at<double>(1) << " " 
+                   << pose.at<double>(2) << std::endl;
+    }
+    
     // draw estimated trajectory 
     int x = trajectory.cols/2 + int(pose.at<double>(0));
     int y = trajectory.rows/2 - int(pose.at<double>(2));
-    circle(trajectory, cv::Point(x, y) ,1, CV_RGB(230,180,30), 1);
+    circle(trajectory, cv::Point(x, y) ,1, CV_RGB(130,180,230), 2);
 
     if (show_gt)
     {
@@ -33,7 +42,8 @@ void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::
       pose_gt.at<double>(2) = pose_matrix_gt[frame_id].val[0][11];
       int x = trajectory.cols/2 + int(pose.at<double>(0));
       int y = trajectory.rows/2 - int(pose.at<double>(2));
-      circle(trajectory, cv::Point(x, y) ,1, CV_RGB(30,180,230), 2);
+      circle(trajectory, cv::Point(x, y) ,1, cv::Scalar(250,250,250), 2);
+      pose_gt.release();
     }
     // print info
 
@@ -45,10 +55,14 @@ void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::
     1, 0, -pose.at<double>(0) - (trajectory.cols - trajectory_biased.cols)/2, 
     0, 1, pose.at<double>(2) - (trajectory.rows - trajectory_biased.rows)/2
     );
-    //cv::Mat trajectory_biased;
-    cv::warpAffine(trajectory, trajectory_biased, Bias, trajectory_biased.size());
+    cv::Mat temp_biased;
+    cv::warpAffine(trajectory, temp_biased, Bias, trajectory_biased.size());
+    temp_biased.copyTo(trajectory_biased);
+    temp_biased.release();
     cv::imshow( "Trajectory my", trajectory_biased);
-    trajectory = trajectory * 0.99;
+    cv::Mat temp_trajectory = trajectory * 0.98;
+    temp_trajectory.copyTo(trajectory);
+    temp_trajectory.release();
     cv::waitKey(1);
 }
 
@@ -91,8 +105,7 @@ void integrateOdometryStereo(int frame_i, cv::Mat& rigid_body_transformation, cv
     }
     else 
     {
-        std::cout << "[WARNING] scale below 0.1, or incorrect translation" << std::endl;
-        std::cout << "  scale: " << scale;
+        // scale is out of range, skip integration but don't print warning
     }
 }
 
@@ -181,6 +194,8 @@ void loadImageLeft(cv::Mat& image_color, cv::Mat& image_gary, int frame_id, std:
 
     // sprintf(file, "image_0/%010d.png", frame_id);
     std::string filename = filepath + std::string(file);
+    image_color.release();
+    image_gary.release();
     image_color = cv::imread(filename, cv::IMREAD_COLOR);
     cvtColor(image_color, image_gary, cv::COLOR_BGR2GRAY);
 }
@@ -191,6 +206,8 @@ void loadImageRight(cv::Mat& image_color, cv::Mat& image_gary, int frame_id, std
 
     // sprintf(file, "image_0/%010d.png", frame_id);
     std::string filename = filepath + std::string(file);
+    image_color.release();
+    image_gary.release();
     image_color = cv::imread(filename, cv::IMREAD_COLOR);
     cvtColor(image_color, image_gary, cv::COLOR_BGR2GRAY);
 }

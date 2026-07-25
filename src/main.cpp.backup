@@ -16,9 +16,11 @@
 
 #include "camera_object.h"
 #include "rgbd_standalone.h"
+#include "loopclosure.h"
 
 #include "basicFunctions.h"
 #include "stabilizationFunctions.h"
+#include "loopclosure.h"
 
 
 using namespace std;
@@ -91,8 +93,7 @@ int main()
     FeatureSet currentVOFeatures;
     FeatureSet currentVOFeatures_stab;
     cv::Mat points4D, points3D;
-    int init_frame_id = 126;
-    int local_loop_ceiling = 1574;
+    int init_frame_id = 0;
     
     bool loop_detected = false;
     int last_loop_frame_id = -100;
@@ -256,7 +257,7 @@ int main()
     
     LoopClosure loopClosure;
     loopClosure.setCameraParameters(projMatrl, projMatrr);
-    loopClosure.setParameters(50, 0.8f, 0.82f, 5, 15);
+    loopClosure.setParameters(30, 0.7f, 0.85f, 5, 20);
 
     double MaxShake = b * (1.0 - framePart) / 2.0;
 
@@ -393,15 +394,20 @@ int main()
     cv::Mat points3D_t0, points4D_t0;
     cv::Mat rigid_body_transformation;
     
-    // Loop closure: add keyframes every 50 frames (frame_id % (50*frame_skip) == 0)
+    // First pass: read frames 0 to 4511
+    bool loop_debug_mode = true;
+    int loop_debug_start_frame = 68;
+    int loop_debug_end_frame = 4511;
     
-    for (int frame_id = init_frame_id+1; frame_id < 15000; frame_id+=frame_skip)
+    for (int frame_id = init_frame_id+1; frame_id < 50000; frame_id+=frame_skip)
     {
-
+        
+        if (loop_debug_mode && frame_id > loop_debug_end_frame) {
+            frame_id = loop_debug_start_frame;
+            std::cout << "[LoopClosure] Loop completed." << std::endl;
+        }
         imageRight_t1.release();
         imageLeft_t1.release();
-        imageRight_t1_color.release();
-        imageLeft_t1_color.release();
         if(use_intel_rgbd)
         {
             pCamera->getLRFrames(imageLeft_t1,imageRight_t1);
@@ -417,16 +423,8 @@ int main()
         }
         else
         {
-            if (frame_id < 1550)
-            {
-                loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id%local_loop_ceiling, filepath);
-                loadImageRight(imageRight_t1_color, imageRight_t1, frame_id%local_loop_ceiling, filepath);
-            }
-            else
-            {
-                loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id%local_loop_ceiling + init_frame_id, filepath);
-                loadImageRight(imageRight_t1_color, imageRight_t1, frame_id%local_loop_ceiling + init_frame_id, filepath);
-            }
+            loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id%10000+1, filepath);  //%1+1
+            loadImageRight(imageRight_t1_color, imageRight_t1, frame_id%10000+1, filepath);   
         }
         if (shakeEnabled == true) //для отладки стабилизации видео можно добавить искусственные дрожания камеры
         {
@@ -622,45 +620,66 @@ int main()
         // ------------------------------------------------
         // Loop closure detection
         // ------------------------------------------------
-        bool is_keyframe_for_loop = (frame_id % (50 * frame_skip) == 0);
-        
-        if (is_keyframe_for_loop && points3D_t0.rows >= 50) {
+        if (frame_id - last_loop_frame_id > 100 && points3D_t0.rows >= 50) {
+            std::cout << "[LoopClosure] Adding frame " << frame_id << " for loop detection (points3D_t0.rows=" << points3D_t0.rows << ")" << std::endl;
             loopClosure.addFrame(frame_id, imageLeft_t1, imageRight_t1,
-                                pointsLeft_t0, pointsRight_t0,
-                                rotation, translation, points3D_t0, true);
+                               pointsLeft_t0, pointsRight_t0,
+                               rotation, translation, points3D_t0);
+            std::cout << "[LoopClosure] Added frame, total keyframes: " << loopClosure.getKeyframeCount() << std::endl;
+        }
             
-            std::cout << "[LoopClosure] Added keyframe " << frame_id << ", total: " 
-                      << loopClosure.getKeyframeCount() << std::endl;
-            
-            int keyframe_count = loopClosure.getKeyframeCount();
-            
-            if (keyframe_count >= 5) {
-                if (loopClosure.detectLoop()) {
-                    std::cout << "[LoopClosure] LOOP DETECTED! Frame: " << frame_id 
-                              << ", Candidate: " << loopClosure.getCandidateKeyframeId() << std::endl;
+            if (loopClosure.detectLoop()) {
+                loop_detected = true;
+                last_loop_frame_id = frame_id;
+                std::cout << "[LoopClosure] Loop detected! Correcting entire trajectory..." << std::endl;
+                
+                cv::Mat R_corr = loopClosure.getLoopRotation();
+                cv::Mat t_corr = loopClosure.getLoopTranslation();
+                
+                std::cout << "[LoopClosure] Correction rotation: " << R_corr << std::endl;
+                std::cout << "[LoopClosure] Correction translation: " << t_corr << std::endl;
+                std::cout << "[LoopClosure] needs_correction: " << loopClosure.needsCorrection() << std::endl;
+                
+                // Apply correction to all keyframes
+                loopClosure.applyCorrectionToKeyframes();
+                
+                // Update current pose
+                std::vector<KeyFrame> all_keyframes = loopClosure.getKeyframes();
+                if (!all_keyframes.empty()) {
+                    std::cout << "[LoopClosure] Total keyframes after correction: " << all_keyframes.size() << std::endl;
+                    KeyFrame& latest_kf = all_keyframes.back();
+                    rotation = latest_kf.rotation.clone();
+                    translation = latest_kf.translation.clone();
                     
-                    loopClosure.applyCorrectionToKeyframes();
+                    rotation_euler = rotationMatrixToEulerAngles(rotation);
                     
-                    loop_detected = true;
-                    last_loop_frame_id = frame_id;
+                    rigid_body_transformation.release();
                     
-                    cv::Mat correction = loopClosure.getLoopCorrection();
-                    std::cout << "[LoopClosure] Correction applied" << std::endl;
-                } else {
-                    std::cout << "[LoopClosure] No loop detected at frame " << frame_id << std::endl;
+                    if(abs(rotation_euler[1])<0.4*(MaxShake + 2)*abs(frame_skip) && 
+                       abs(rotation_euler[0])<0.4*(MaxShake + 2)*abs(frame_skip) && 
+                       abs(rotation_euler[2])<0.4*(MaxShake + 2)*abs(frame_skip))
+                    {
+                        integrateOdometryStereo(frame_id, rigid_body_transformation, frame_pose, 
+                                           rotation, translation);
+                    }
                 }
+            } else {
+                std::cout << "[LoopClosure] No loop detected this time." << std::endl;
             }
         }
         
-        if (loop_detected && frame_id < last_loop_frame_id + 100) {
-            continue;
+        if (loop_detected) {
+            loop_detected = false;
         }
 
         // ------------------------------------------------
         // Integrating and display
         // ------------------------------------------------
         
-
+        // Debug: show keyframe count
+        if (frame_id % 500 == 0) {
+            std::cout << "[LoopClosure] Total keyframes: " << loopClosure.getKeyframeCount() << std::endl;
+        }
         
         rotation_euler = rotationMatrixToEulerAngles(rotation);
 
@@ -684,15 +703,19 @@ int main()
         int key = cv::waitKey(1);
         if (key == 'w')
             {
+                //MaxShake *= 1.1;
+                //cout << "MaxShake = " << MaxShake << endl;
                 frame_skip++;
                 cout << "frame_skip = " << frame_skip << endl;
             }
         else if (key == 's' && frame_skip > 1)
             {
+                //MaxShake /= 1.1;
+                //cout << "MaxShake = " << MaxShake << endl;
                 frame_skip--;
                 cout << "frame_skip = " << frame_skip << endl;
             }
-        else if (key == 'p' || frame_id%1000 == 0)
+        else if (key == 'p' || frame_id%1500 == 0)
             {
             string trajectory_picture_1 = "trajectory_Shake_";
             string trajectory_picture_2 = "FrameSkip_";

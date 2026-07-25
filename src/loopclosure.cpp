@@ -23,6 +23,11 @@ LoopClosure::LoopClosure()
         std::cerr << "[LoopClosure] Failed to load MobileNetV2 ONNX model" << std::endl;
     } else {
         std::cerr << "[LoopClosure] MobileNetV2 model loaded successfully" << std::endl;
+        std::vector<cv::String> layerNames = network_->getLayerNames();
+        std::cerr << "[LoopClosure] Network layers:" << std::endl;
+        for (const auto& name : layerNames) {
+            std::cerr << "  - " << name << std::endl;
+        }
     }
     
     orb_descriptor_ = cv::ORB::create(400);
@@ -53,14 +58,25 @@ bool LoopClosure::isKeyframe(const cv::Mat& points3D, int min_points) {
 
 bool LoopClosure::extractDeepFeatures(const cv::Mat& image, cv::Mat& feature_vec) {
     if (network_.empty()) {
+        std::cerr << "[LoopClosure] Network is empty!" << std::endl;
         return false;
     }
     
     cv::Mat dst;
+    if (image.empty()) {
+        std::cerr << "[LoopClosure] Input image is empty!" << std::endl;
+        return false;
+    }
+    
     if (image.channels() == 1) {
         cv::cvtColor(image, dst, cv::COLOR_GRAY2RGB);
     } else {
         image.copyTo(dst);
+    }
+    
+    if (dst.empty()) {
+        std::cerr << "[LoopClosure] Converted image is empty!" << std::endl;
+        return false;
     }
     
     cv::Mat blurred;
@@ -68,7 +84,12 @@ bool LoopClosure::extractDeepFeatures(const cv::Mat& image, cv::Mat& feature_vec
     
     cv::Mat blob;
     cv::dnn::blobFromImage(blurred, blob, 1.0/255.0, cv::Size(224, 224),
-                          cv::Scalar(0.485, 0.456, 0.406), true, false);
+                           cv::Scalar(0.485, 0.456, 0.406), true, false);
+    
+    if (blob.empty()) {
+        std::cerr << "[LoopClosure] Blob is empty!" << std::endl;
+        return false;
+    }
     
     network_->setInput(blob);
     
@@ -76,14 +97,21 @@ bool LoopClosure::extractDeepFeatures(const cv::Mat& image, cv::Mat& feature_vec
     cv::Mat output = network_->forward(feature_layer_name);
     
     if (output.empty()) {
+        std::cerr << "[LoopClosure] Network output is empty! Layer name: " << feature_layer_name << std::endl;
         return false;
     }
+    
+    std::cout << "[LoopClosure] Network output shape: " << output.size << std::endl;
     
     output.copyTo(feature_vec);
     
     float norm = cv::norm(feature_vec);
     if (norm > 1e-6) {
         feature_vec /= norm;
+        std::cout << "[LoopClosure] Feature extracted, norm: " << norm << std::endl;
+    } else {
+        std::cerr << "[LoopClosure] Feature norm is too small: " << norm << std::endl;
+        return false;
     }
     
     return true;
@@ -127,7 +155,7 @@ bool LoopClosure::extractKeypointDescriptors(const cv::Mat& image,
 }
 
 bool LoopClosure::matchDescriptors(const cv::Mat& desc1, const cv::Mat& desc2,
-                                   std::vector<cv::DMatch>& matches) {
+                                    std::vector<cv::DMatch>& matches) {
     if (matcher_.empty() || desc1.empty() || desc2.empty()) {
         return false;
     }
@@ -158,20 +186,32 @@ bool LoopClosure::matchDescriptors(const cv::Mat& desc1, const cv::Mat& desc2,
 }
 
 float LoopClosure::computeSimilarity(const cv::Mat& vec1, const cv::Mat& vec2) {
-    if (vec1.empty() || vec2.empty() || vec1.rows != vec2.rows) {
+    std::cerr << "[LoopClosure] computeSimilarity called: vec1=" << vec1.size() << " vec2=" << vec2.size() << std::endl;
+    
+    if (vec1.empty() || vec2.empty()) {
+        std::cerr << "[LoopClosure] computeSimilarity: empty input" << std::endl;
         return 0.0f;
     }
     
-    // Ensure both matrices are 1D vectors (single column or row)
-    cv::Mat v1 = vec1.reshape(1, vec1.total());
-    cv::Mat v2 = vec2.reshape(1, vec2.total());
-    
-    if (v1.total() != v2.total()) {
+    if (vec1.type() != vec2.type()) {
+        std::cerr << "[LoopClosure] computeSimilarity: type mismatch" << std::endl;
         return 0.0f;
     }
     
-    int len = static_cast<int>(v1.total());
+    cv::Mat v1 = vec1.reshape(1, 1);
+    cv::Mat v2 = vec2.reshape(1, 1);
+    
+    std::cerr << "[LoopClosure] computeSimilarity: v1=" << v1.size() << " v2=" << v2.size() << std::endl;
+    
+    if (v1.cols != v2.cols) {
+        std::cerr << "[LoopClosure] computeSimilarity: column mismatch " << v1.cols << " vs " << v2.cols << std::endl;
+        return 0.0f;
+    }
+    
+    int len = v1.cols;
     float sum = 0.0f;
+    
+    std::cerr << "[LoopClosure] computeSimilarity: computing dot product of length " << len << std::endl;
     
     if (v1.type() == CV_32F) {
         const float* p1 = v1.ptr<float>();
@@ -185,7 +225,12 @@ float LoopClosure::computeSimilarity(const cv::Mat& vec1, const cv::Mat& vec2) {
         for (int i = 0; i < len; i++) {
             sum += static_cast<float>(p1[i] * p2[i]);
         }
+    } else {
+        std::cerr << "[LoopClosure] computeSimilarity: unsupported type" << std::endl;
+        return 0.0f;
     }
+    
+    std::cerr << "[LoopClosure] computeSimilarity: result=" << sum << std::endl;
     
     return sum;
 }
@@ -201,10 +246,12 @@ bool LoopClosure::poseCorrectionPnP(const std::vector<cv::Point3f>& points3D,
     cv::Mat rvec = cv::Mat::zeros(3, 1, CV_64F);
     cv::Mat tvec = cv::Mat::zeros(3, 1, CV_64F);
     
-    cv::Mat K = (cv::Mat_<double>(3, 3) << 
-                 projMatl_.at<double>(0, 0), 0, projMatl_.at<double>(0, 2),
-                 0, projMatl_.at<double>(1, 1), projMatl_.at<double>(1, 2),
-                 0, 0, 1);
+    cv::Mat K = cv::Mat::zeros(3, 3, CV_64F);
+    K.at<double>(0, 0) = projMatl_.at<float>(0, 0);
+    K.at<double>(1, 1) = projMatl_.at<float>(1, 1);
+    K.at<double>(0, 2) = projMatl_.at<float>(0, 2);
+    K.at<double>(1, 2) = projMatl_.at<float>(1, 2);
+    K.at<double>(2, 2) = 1.0;
     
     std::vector<int> inliers;
     cv::solvePnPRansac(points3D, points2D, K, dist_coeff, rvec, tvec,
@@ -221,13 +268,13 @@ bool LoopClosure::poseCorrectionPnP(const std::vector<cv::Point3f>& points3D,
 }
 
 bool LoopClosure::addFrame(int frame_id, const cv::Mat& image_left, const cv::Mat& image_right,
-                          const std::vector<cv::Point2f>& keypoints_left,
-                          const std::vector<cv::Point2f>& keypoints_right,
-                          const cv::Mat& rotation, const cv::Mat& translation,
-                          const cv::Mat& points3D) {
+                            const std::vector<cv::Point2f>& keypoints_left,
+                            const std::vector<cv::Point2f>& keypoints_right,
+                            const cv::Mat& rotation, const cv::Mat& translation,
+                            const cv::Mat& points3D, bool force_keyframe) {
     std::lock_guard<std::mutex> lock(keyframe_mutex_);
     
-    bool is_kf = isKeyframe(points3D, min_keypoints_);
+    bool is_kf = force_keyframe || isKeyframe(points3D, min_keypoints_);
     
     KeyFrame kf;
     kf.id = frame_id;
@@ -238,19 +285,30 @@ bool LoopClosure::addFrame(int frame_id, const cv::Mat& image_left, const cv::Ma
     kf.points3D = points3D;
     kf.is_keyframe = is_kf;
     
+    kf.full_pose = cv::Mat::eye(4, 4, CV_64F);
+    rotation.copyTo(kf.full_pose(cv::Rect(0, 0, 3, 3)));
+    translation.copyTo(kf.full_pose(cv::Rect(3, 0, 1, 3)));
+    
     if (is_kf) {
-        if (!extractDeepFeatures(image_left, kf.descriptor)) {
-            std::cerr << "[LoopClosure] Failed to extract deep features for frame " << frame_id << std::endl;
-            kf.descriptor = cv::Mat::zeros(1, 1280, CV_32F);
-        }
+        cv::Mat orb_descriptors;
+        std::cout << "[LoopClosure] Adding keyframe " << frame_id << ", image size: " << image_left.size() 
+                  << ", channels: " << image_left.channels() << std::endl;
         
-        if (!extractKeypointDescriptors(image_left, keypoints_left, kf.descriptor, kf.desc_feat_indx)) {
-            std::cerr << "[LoopClosure] Failed to extract ORB descriptors for frame " << frame_id << std::endl;
-            kf.descriptor = cv::Mat::zeros(1, 1280, CV_32F);
+        if (extractDeepFeatures(image_left, kf.descriptor)) {
+            std::cout << "[LoopClosure] Deep features extracted, size: " << kf.descriptor.size() 
+                      << ", norm: " << cv::norm(kf.descriptor) << std::endl;
+            
+            if (extractKeypointDescriptors(image_left, keypoints_left, orb_descriptors, kf.desc_feat_indx)) {
+                orb_descriptors.copyTo(kf.orb_descriptor);
+                keyframes_.push_back(kf);
+                last_keyframe_id_ = frame_id;
+                std::cout << "[LoopClosure] Keyframe " << frame_id << " added successfully" << std::endl;
+            } else {
+                std::cerr << "[LoopClosure] Failed to extract ORB descriptors for keyframe " << frame_id << std::endl;
+            }
+        } else {
+            std::cerr << "[LoopClosure] Failed to extract deep features for keyframe " << frame_id << std::endl;
         }
-        
-        keyframes_.push_back(kf);
-        last_keyframe_id_ = frame_id;
     } else {
         keyframes_.push_back(kf);
     }
@@ -283,8 +341,10 @@ bool LoopClosure::detectLoop() {
     }
     
     float max_similarity = 0.0f;
-    int max_sim_id = -1;
+    size_t max_sim_index = 0;
     int num_weak_candidates = 0;
+    
+    std::cout << "[LoopClosure] Checking " << keyframes_.size() << " keyframes for loop closure..." << std::endl;
     
     for (size_t i = 0; i < keyframes_.size() - 1; i++) {
         const KeyFrame& kf = keyframes_[i];
@@ -298,10 +358,16 @@ bool LoopClosure::detectLoop() {
         }
         
         float similarity = computeSimilarity(current_desc, kf.descriptor);
+        std::cout << "[LoopClosure] Comparing frame " << current_kf.id << " with " << kf.id << ": similarity=" << similarity << std::endl;
+        
+        if (similarity > 0.7f) {
+            std::cout << "[LoopClosure] Potential match: current=" << current_kf.id 
+                      << ", candidate=" << kf.id << ", similarity=" << similarity << std::endl;
+        }
         
         if (similarity > max_similarity) {
             max_similarity = similarity;
-            max_sim_id = kf.id;
+            max_sim_index = i;
         }
         
         if (similarity > weak_threshold_) {
@@ -309,18 +375,17 @@ bool LoopClosure::detectLoop() {
         }
     }
     
-    if (max_similarity < strong_threshold_ || num_weak_candidates > max_weak_candidates_) {
+    std::cout << "[LoopClosure] Max similarity: " << max_similarity << " (id=" << keyframes_[max_sim_index].id << ")" << std::endl;
+    std::cout << "[LoopClosure] Weak candidates: " << num_weak_candidates << std::endl;
+    
+    if (max_similarity < strong_threshold_ || keyframes_.empty()) {
         return false;
     }
     
-    KeyFrame& candidate_kf = keyframes_[max_sim_id];
+    KeyFrame& candidate_kf = keyframes_[max_sim_index];
     
     std::vector<cv::DMatch> matches;
-    if (!matchDescriptors(candidate_kf.descriptor, current_kf.descriptor, matches)) {
-        return false;
-    }
-    
-    if (static_cast<int>(matches.size()) < min_match_count_) {
+    if (!matchDescriptors(candidate_kf.orb_descriptor, current_kf.orb_descriptor, matches)) {
         return false;
     }
     
@@ -364,11 +429,53 @@ bool LoopClosure::detectLoop() {
     loop_detected_ = true;
     needs_correction_ = true;
     
-    std::cerr << "[LoopClosure] Loop detected! Frame " << current_kf.id 
-              << " matches with frame " << candidate_kf.id 
-              << " (similarity: " << max_similarity << ", matches: " << matches.size() << ")" << std::endl;
-    
     return true;
+}
+
+void LoopClosure::applyCorrectionToKeyframes() {
+    std::lock_guard<std::mutex> lock(keyframe_mutex_);
+    
+    if (!needs_correction_ || keyframes_.empty()) {
+        return;
+    }
+    
+    KeyFrame& current_kf = keyframes_.back();
+    if (!current_kf.is_keyframe) {
+        return;
+    }
+    
+    cv::Mat R_corr = loop_rotation_;
+    cv::Mat t_corr = loop_translation_;
+    
+    for (auto& kf : keyframes_) {
+        cv::Mat R_old = kf.rotation;
+        cv::Mat t_old = kf.translation;
+        
+        cv::Mat R_new = R_corr * R_old;
+        cv::Mat t_new = R_corr * t_old + t_corr;
+        
+        kf.rotation = R_new.clone();
+        kf.translation = t_new.clone();
+        
+        kf.full_pose = cv::Mat::eye(4, 4, CV_64F);
+        R_new.copyTo(kf.full_pose(cv::Rect(0, 0, 3, 3)));
+        t_new.copyTo(kf.full_pose(cv::Rect(3, 0, 1, 3)));
+    }
+}
+
+std::vector<KeyFrame> LoopClosure::getKeyframes() {
+    std::lock_guard<std::mutex> lock(keyframe_mutex_);
+    return keyframes_;
+}
+
+int LoopClosure::getKeyframeCount() {
+    std::lock_guard<std::mutex> lock(keyframe_mutex_);
+    return static_cast<int>(keyframes_.size());
+}
+
+int LoopClosure::getRawKeyframeCount() {
+    std::lock_guard<std::mutex> lock(keyframe_mutex_);
+    return static_cast<int>(keyframes_.size());
 }
 
 cv::Mat LoopClosure::getLoopCorrection() {
