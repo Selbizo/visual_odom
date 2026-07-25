@@ -31,7 +31,7 @@ LoopClosure::LoopClosure()
         }
     }
     
-    orb_descriptor_ = cv::ORB::create(400);
+    orb_descriptor_ = cv::ORB::create(200);
     matcher_ = cv::DescriptorMatcher::create("BruteForce-Hamming");
 }
 
@@ -102,14 +102,14 @@ bool LoopClosure::extractDeepFeatures(const cv::Mat& image, cv::Mat& feature_vec
         return false;
     }
     
-    std::cout << "[LoopClosure] Network output shape: " << output.size << std::endl;
+    // std::cout << "[LoopClosure] Network output shape: " << output.size << std::endl;
     
     output.copyTo(feature_vec);
     
     float norm = cv::norm(feature_vec);
     if (norm > 1e-6) {
         feature_vec /= norm;
-        std::cout << "[LoopClosure] Feature extracted, norm: " << norm << std::endl;
+        // std::cout << "[LoopClosure] Feature extracted, norm: " << norm << std::endl;
     } else {
         std::cerr << "[LoopClosure] Feature norm is too small: " << norm << std::endl;
         return false;
@@ -304,18 +304,18 @@ bool LoopClosure::addFrame(int frame_id, const cv::Mat& image_left, const cv::Ma
     
     if (is_kf) {
         cv::Mat orb_descriptors;
-        std::cout << "[LoopClosure] Adding keyframe " << frame_id << ", image size: " << image_left.size() 
-                  << ", channels: " << image_left.channels() << std::endl;
+        // std::cout << "[LoopClosure] Adding keyframe " << frame_id << ", image size: " << image_left.size() 
+        //           << ", channels: " << image_left.channels() << std::endl;
         
         if (extractDeepFeatures(image_left, kf.descriptor)) {
-            std::cout << "[LoopClosure] Deep features extracted, size: " << kf.descriptor.size() 
-                      << ", norm: " << cv::norm(kf.descriptor) << std::endl;
+            // std::cout << "[LoopClosure] Deep features extracted, size: " << kf.descriptor.size() 
+            //           << ", norm: " << cv::norm(kf.descriptor) << std::endl;
             
             if (extractKeypointDescriptors(image_left, keypoints_left, orb_descriptors, kf.desc_feat_indx)) {
                 orb_descriptors.copyTo(kf.orb_descriptor);
                 keyframes_.push_back(kf);
                 last_keyframe_id_ = frame_id;
-                std::cout << "[LoopClosure] Keyframe " << frame_id << " added successfully" << std::endl;
+                // std::cout << "[LoopClosure] Keyframe " << frame_id << " added successfully" << std::endl;
             } else {
                 std::cerr << "[LoopClosure] Failed to extract ORB descriptors for keyframe " << frame_id << std::endl;
             }

@@ -21,6 +21,8 @@
 #include "stabilizationFunctions.h"
 
 
+
+
 using namespace std;
 using namespace cv;
 
@@ -60,17 +62,24 @@ int main()
     std::vector<Matrix> pose_matrix_gt;
     
     // Sequence
-    string filepath = string("/home/selbizo/CV/dataset/sequences/00/");
+    constexpr const char* filepath = "/home/selbizo/CV/dataset/sequences/00/";
     cout << "Filepath: " << filepath << endl;
 
-    if(filepath == "rgbd") use_intel_rgbd = true;
-    if(filepath == "camera") use_camera = true;
+    constexpr const char* rgbd_str = "rgbd";
+    constexpr const char* camera_str = "camera";
+    
+    if(filepath == rgbd_str) use_intel_rgbd = true;
+    else if(filepath == camera_str) use_camera = true;
 
     // Camera calibration
-    string strSettingPath = string("../calibration/kitti00.yaml");
+    constexpr const char* strSettingPath = "../calibration/kitti00.yaml";
     cout << "Calibration Filepath: " << strSettingPath << endl;
 
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
+    if(!fSettings.isOpened()) {
+        cerr << "Error: Cannot open calibration file " << strSettingPath << endl;
+        return -1;
+    }
     int frame_skip = 1;
 
     // -----------------------------------------
@@ -82,9 +91,7 @@ int main()
     cv::Mat pose = cv::Mat::zeros(3, 1, CV_64F);
     cv::Mat Rpose = cv::Mat::eye(3, 3, CV_64F);
     
-    cv::Mat frame_pose;
-    frame_pose.create(4, 4, CV_64F);
-    frame_pose = cv::Mat::eye(4, 4, CV_64F);
+    cv::Mat frame_pose = cv::Mat::eye(4, 4, CV_64F);
     cv::Mat frame_pose32 = cv::Mat::eye(4, 4, CV_32F);
 
     std::cout << "frame_pose " << frame_pose << std::endl;
@@ -107,11 +114,7 @@ int main()
     TransformParam noiseIn = { 0.0, 0.0, 0.0 };
     vector <TransformParam> noiseOut(2);
 
-	for (int i = 0; i < noiseOut.size();i++)
-	{
-		noiseOut[i] = {0.0, 0.0, 0.0};
-	}
-    vector <TransformParam> X(1+NCoef), Y(1 + NCoef);
+	for (auto& noise : noiseOut) noise = {0.0, 0.0, 0.0};
     
     //--------------------------------
     // END Initialize variables VideoShake
@@ -169,12 +172,9 @@ int main()
 	const unsigned int firSize = 4;
     vector <TransformParam> transforms(firSize), movement(firSize), movementKalman(firSize);
 
-	for (int i = 0; i < firSize;i++)
-	{
-        transforms[i] = {0.0, 0.0, 0.0};
-        movement[i] = {0.0, 0.0, 0.0};
-        movementKalman[i] = {0.0, 0.0, 0.0};        
-    }
+	for (auto& t : transforms) t = {0.0, 0.0, 0.0};
+	for (auto& m : movement) m = {0.0, 0.0, 0.0};
+	for (auto& k : movementKalman) k = {0.0, 0.0, 0.0};
      
 	// ~~~~~~~~~~~~~~ для счетчика кадров в секунду ~~~~~~~~~~~~~~~//
 	unsigned int frameCnt = 0;
@@ -197,10 +197,9 @@ int main()
     // ------------------------
     // Load first images
     // ------------------------
-    cv::Mat imageRight_t0,  imageLeft_t0, imageLeft_stab_t0, imageRight_stab_t0;
-    CameraBase *pCamera = NULL;
+    cv::Mat imageRight_t0, imageLeft_t0, imageLeft_stab_t0, imageRight_stab_t0;
+    CameraBase* pCamera = nullptr;
     cv::VideoCapture captureLeft, captureRight;
-    
     cv::Mat imageLeft_t0_color, imageRight_t0_color;
     
     if(use_intel_rgbd)
@@ -230,11 +229,10 @@ int main()
     clock_t t_a, t_b;
 
     //init sizes of frames
-
-	const int a = imageLeft_t0.cols;
-	const int b = imageLeft_t0.rows;
-	const double c = sqrt(a * a + b * b);
-	const double atan_ba = atan2(b, a);
+    const int a = imageLeft_t0.cols;
+    const int b = imageLeft_t0.rows;
+    const double c = std::sqrt(a * a + b * b);
+    const double atan_ba = std::atan2(b, a);
     
     float fx = fSettings["Camera.fx"];
     float fy = fSettings["Camera.fy"];
@@ -243,13 +241,12 @@ int main()
     float bf = fSettings["Camera.bf"];
     
     double framePart = 1.0;
-    if (framePart < 1.0)
-    {
-        fx = fx/framePart;
-        fy = fy/framePart;
-        cx = cx - (a * (1.0 - framePart) / 2.0);
-        cy = cy - (b * (1.0 - framePart) / 2.0);
-        bf = bf/framePart;
+    if(framePart < 1.0) {
+        fx /= framePart;
+        fy /= framePart;
+        cx -= a * (1.0 - framePart) / 2.0;
+        cy -= b * (1.0 - framePart) / 2.0;
+        bf /= framePart;
     }
     cv::Mat projMatrl = (cv::Mat_<float>(3, 4) << fx, 0., cx, 0., 0., fy, cy, 0., 0,  0., 1., 0.);
     cv::Mat projMatrr = (cv::Mat_<float>(3, 4) << fx, 0., cx, bf, 0., fy, cy, 0., 0,  0., 1., 0.);
@@ -318,10 +315,9 @@ int main()
 	Mat maskSearchLeft = Mat::zeros(cv::Size(b / compression , a / compression ), CV_8U);
 	Mat maskSearchRight = Mat::zeros(cv::Size(b / compression , a / compression ), CV_8U);
 	
-    cv::rectangle(maskSearchLeft, Rect(b * (1.0 - 0.5) / compression / 2, b * (1.0 - 0.5) / compression / 2, a * 0.5, b * 0.5 / compression ), 
-		Scalar(255), FILLED); // Прямоугольная маска
-    cv::rectangle(maskSearchRight, Rect(a * (1.0 - 0.5) / compression / 2, b * (1.0 - 0.5) / compression / 2, a * 0.5, b * 0.5 / compression ), 
-		Scalar(255), FILLED); // Прямоугольная маска
+    const Rect rect_search(0, 0, a * 0.5, b * 0.5 / compression);
+    cv::rectangle(maskSearchLeft, rect_search, Scalar(255), FILLED);
+    cv::rectangle(maskSearchRight, rect_search, Scalar(255), FILLED);
     
 	cuda::GpuMat gMaskSearchLeft(maskSearchLeft);
     cuda::GpuMat gMaskSearchRight(maskSearchRight);
@@ -329,23 +325,20 @@ int main()
 	Mat maskSearchSmallLeft = Mat::zeros(cv::Size(a / compression, b / compression), CV_8U);
 	Mat maskSearchSmallRight = Mat::zeros(cv::Size(a / compression, b / compression), CV_8U);
 	
-    cv::rectangle(maskSearchSmallLeft, Rect(a * (1.0 - 0.3) / compression / 2, b * (1.0 - 0.3) / compression / 2, max(a,b) * 0.3 / compression, max(a,b) * 0.3 / compression),
-		Scalar(255), FILLED); // Прямоугольная маска
-
-    cv::rectangle(maskSearchSmallRight, Rect(a * (1.0 - 0.3) / compression / 2, b * (1.0 - 0.3) / compression / 2, max(a,b) * 0.3 / compression, max(a,b) * 0.3 / compression),
-		Scalar(255), FILLED); // Прямоугольная маска
+    const int max_dim = std::max(a, b);
+    const Rect rect_small(0, 0, max_dim * 0.3 / compression, max_dim * 0.3 / compression);
+    cv::rectangle(maskSearchSmallLeft, rect_small, Scalar(255), FILLED);
+    cv::rectangle(maskSearchSmallRight, rect_small, Scalar(255), FILLED);
     
 	cuda::GpuMat gMaskSearchSmallLeft(maskSearchSmallLeft);
 	cuda::GpuMat gMaskSearchSmallRight(maskSearchSmallRight);
     cuda::GpuMat gMaskSearchSmallRoiLeft, gMaskSearchSmallRoiRight;
 
 	Mat roiMaskLeft = Mat::zeros(cv::Size(a / compression, b / compression), CV_8U);
-	cv::rectangle(roiMaskLeft, Rect(a * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
-		Scalar(255), FILLED); // Прямоугольная маска
-
 	Mat roiMaskRight = Mat::zeros(cv::Size(a / compression, b / compression), CV_8U);
-	cv::rectangle(roiMaskRight, Rect(a * (1.0 - 0.4) / compression / 2, b * (1.0 - 0.4) / compression / 2, a * 0.4, b * 0.4 / compression),
-		Scalar(255), FILLED); // Прямоугольная маска
+    const Rect rect_roi(0, 0, a * 0.4, b * 0.4 / compression);
+    cv::rectangle(roiMaskLeft, rect_roi, Scalar(255), FILLED);
+    cv::rectangle(roiMaskRight, rect_roi, Scalar(255), FILLED);
 	//cuda::GpuMat gRoiMask(roiMask);
 
 	//~~~~~~~~~~~~~~~~~~~~~~~~~~~Создаем GpuMat для мнимой части фильтра Винера~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -369,10 +362,9 @@ int main()
     bool use_interpolation = false;
     cv::Mat last_valid_rotation = cv::Mat::eye(3, 3, CV_64F);
     cv::Mat last_valid_translation = cv::Mat::zeros(3, 1, CV_64F);
-    cv::Mat interpolated_rotation = cv::Mat::eye(3, 3, CV_64F);
-    cv::Mat interpolated_translation = cv::Mat::zeros(3, 1, CV_64F);
+    cv::Mat interpolated_rotation, interpolated_translation;
     int interpolation_frames = 0;
-    const int max_interpolation_frames = 100; // Максимальное количество кадров для интерполяции
+    const int max_interpolation_frames = 100;
     
     // Добавляем переменные для визуальной одометрии
     cv::Mat imageLeft_t1_color, imageRight_t1_color;  
@@ -395,8 +387,6 @@ int main()
     cv::Mat points3D_t0, points4D_t0;
     cv::Mat rigid_body_transformation;
     
-    // Loop closure: add keyframes every 50 frames (frame_id % (50*frame_skip) == 0)
-    
     for (int frame_id = init_frame_id+1; frame_id < 15000; frame_id+=frame_skip)
     {
 
@@ -404,42 +394,29 @@ int main()
         imageLeft_t1.release();
         imageRight_t1_color.release();
         imageLeft_t1_color.release();
-        if(use_intel_rgbd)
-        {
-            pCamera->getLRFrames(imageLeft_t1,imageRight_t1);
-        }
-        else if (use_camera &&! use_intel_rgbd)
-        {
+        
+        if(use_intel_rgbd) {
+            pCamera->getLRFrames(imageLeft_t1, imageRight_t1);
+        } else if(use_camera) {
             captureLeft >> imageLeft_t1_color;
             cvtColor(imageLeft_t1_color, imageLeft_t1, cv::COLOR_BGR2GRAY);
-            cvtColor(imageLeft_t1_color, imageLeft_t1, cv::COLOR_BGR2GRAY);
-
             captureRight >> imageRight_t1_color;
             cvtColor(imageRight_t1_color, imageRight_t1, cv::COLOR_BGR2GRAY);
+        } else {
+            const int adjusted_frame = (frame_id < local_loop_ceiling) 
+                ? frame_id % local_loop_ceiling 
+                : frame_id % local_loop_ceiling + init_frame_id;
+            loadImageLeft(imageLeft_t1_color, imageLeft_t1, adjusted_frame, filepath);
+            loadImageRight(imageRight_t1_color, imageRight_t1, adjusted_frame, filepath);
         }
-        else
-        {
-            if (frame_id < local_loop_ceiling)
-            {
-                loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id%local_loop_ceiling, filepath);
-                loadImageRight(imageRight_t1_color, imageRight_t1, frame_id%local_loop_ceiling, filepath);
-            }
-            else
-            {
-                loadImageLeft(imageLeft_t1_color,  imageLeft_t1, frame_id%local_loop_ceiling + init_frame_id, filepath);
-                loadImageRight(imageRight_t1_color, imageRight_t1, frame_id%local_loop_ceiling + init_frame_id, filepath);
-            }
-        }
-        if (shakeEnabled == true) //для отладки стабилизации видео можно добавить искусственные дрожания камеры
-        {
-            noiseIn.dx = (double)(rng.uniform(-MaxShake, MaxShake))*0.0 + MaxShake*sin(frame_id*DEG_TO_RAD*50.0);
-            noiseIn.dy = (double)(rng.uniform(-MaxShake, MaxShake))*0.0 + MaxShake*cos(frame_id*DEG_TO_RAD*41.0);
-            noiseIn.da = (double)(rng.uniform(-sqrt(MaxShake)/1000, sqrt(MaxShake)/1000)) + 3.0*sqrt(MaxShake)/1000*sin(frame_id*DEG_TO_RAD*10.0);
-
-            //noiseOut[0] = iirNoise(noiseIn, X,Y);
+        if(shakeEnabled) {
+            noiseIn.dx = MaxShake * sin(frame_id * DEG_TO_RAD * 50.0);
+            noiseIn.dy = MaxShake * cos(frame_id * DEG_TO_RAD * 41.0);
+            noiseIn.da = 3.0 * sqrt(MaxShake) / 1000.0 * sin(frame_id * DEG_TO_RAD * 10.0);
+            
             noiseOut[0] = noiseIn;
-
             noiseOut[0].getTransform(Shake);
+            
             cv::warpAffine(imageLeft_t1, imageLeft_t1, Shake, imageLeft_t1.size());
             cv::warpAffine(imageRight_t1, imageRight_t1, Shake, imageRight_t1.size());
         }
@@ -482,14 +459,9 @@ int main()
 
             }
                     
-            if (gain < 1.0)
-            {
-                gain *=1.05;
-                gain+=0.01;
-            } 
-            if (gain > 1.0)
-            {
-                gain = 1.0;
+            if(gain < 1.0) {
+                gain = gain * 1.05 + 0.01;
+                if(gain > 1.0) gain = 1.0;
             }
             iirAdaptive(transforms, tauStab, roi, a, b, c, gain, movement, movementKalman); //интегрирование первой производной (получение смещения)
 
@@ -554,54 +526,47 @@ int main()
         imageRight_stab_t1.copyTo(imageRight_stab_t0);
 
         // Проверяем количество найденных точек
-        if (pointsLeft_t0.size() < 30 || pointsLeft_t1.size() < 30) {
-            if (!use_interpolation && pointsLeft_t0.size() >= 15) {
-                // Сохраняем последние валидные параметры движения перед началом интерполяции
+        if(pointsLeft_t0.size() < 30 || pointsLeft_t1.size() < 30) {
+            if(!use_interpolation && pointsLeft_t0.size() >= 15) {
                 last_valid_rotation = rotation.clone();
                 last_valid_translation = translation.clone();
                 use_interpolation = true;
                 interpolation_frames = 0;
             }
         
-            if (use_interpolation) {
-                // Используем линейную интерполяцию
-                if (interpolation_frames < max_interpolation_frames) {
-                    double alpha = (double)(interpolation_frames + 1) / (max_interpolation_frames + 1);
-                    interpolated_rotation = last_valid_rotation * (1.0 - alpha) + rotation * alpha;
-                    interpolated_translation = last_valid_translation * (1.0 - alpha) + translation * alpha;
-                    
-                    // Используем интерполированные значения
-                    rotation = interpolated_rotation.clone();
-                    translation = interpolated_translation.clone();
-                    interpolation_frames++;
-                    
-                    std::cout << "[Info] Using interpolation, frames: " << interpolation_frames 
-                              << ", points found: " << pointsLeft_t0.size() << std::endl;
-                } else {
-                   // Сбрасываем интерполяцию если слишком долго не находим точки
-                    use_interpolation = false;
-                    std::cout << "[Warning] Interpolation timeout, resetting..." << std::endl;
-                }
+            if(use_interpolation && interpolation_frames < max_interpolation_frames) {
+                const double alpha = static_cast<double>(interpolation_frames + 1) / (max_interpolation_frames + 1);
+                interpolated_rotation = last_valid_rotation * (1.0 - alpha) + rotation * alpha;
+                interpolated_translation = last_valid_translation * (1.0 - alpha) + translation * alpha;
+                
+                rotation = interpolated_rotation.clone();
+                translation = interpolated_translation.clone();
+                interpolation_frames++;
+                
+                std::cout << "[Info] Using interpolation, frames: " << interpolation_frames 
+                          << ", points found: " << pointsLeft_t0.size() << std::endl;
             } else {
-                // Пропускаем кадр если точек слишком мало и интерполяция не активна
-                std::cout << "[Warning] Too few points (" << pointsLeft_t0.size() 
-                          << "), skipping frame..." << std::endl;
+                if(!use_interpolation) {
+                    std::cout << "[Warning] Too few points (" << pointsLeft_t0.size() 
+                              << "), skipping frame..." << std::endl;
+                } else {
+                    std::cout << "[Warning] Interpolation timeout, resetting..." << std::endl;
+                    use_interpolation = false;
+                }
                 continue;
             }
         } else {
-            // Достаточно точек - нормальная обработка
-            if (use_interpolation) {
+            if(use_interpolation) {
                 use_interpolation = false;
                 std::cout << "[Info] Enough points found, stopping interpolation" << std::endl;
             }
-        
 
             // ---------------------
             // Triangulate 3D Points
             // ---------------------
             points3D_t0.release();
             points4D_t0.release();
-            cv::triangulatePoints( projMatrl,  projMatrr,  pointsLeft_t0,  pointsRight_t0,  points4D_t0);
+            cv::triangulatePoints(projMatrl, projMatrr, pointsLeft_t0, pointsRight_t0, points4D_t0);
             cv::convertPointsFromHomogeneous(points4D_t0.t(), points3D_t0);
 
             // ---------------------
@@ -612,7 +577,6 @@ int main()
                            points3D_t0, rotation, translation, frame_skip, false);
             clock_t toc_gpu = clock();
         
-            // Сохраняем валидные параметры движения
             last_valid_rotation = rotation.clone();
             last_valid_translation = translation.clone();
         }
@@ -621,92 +585,49 @@ int main()
 
         displayTracking(stabEnabled ? imageLeft_stab_t1 : imageLeft_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
 
-        // ------------------------------------------------
         // Loop closure detection
-        // ------------------------------------------------
-        bool is_keyframe_for_loop = (frame_id % (10 * frame_skip) == 0);
-        
-        if (is_keyframe_for_loop && points3D_t0.rows >= 30) {
-
+        if(frame_id % (50 * frame_skip) == 0 && points3D_t0.rows >= 30) {
             loopClosure.addFrame(frame_id, imageLeft_t1, imageRight_t1,
                                 pointsLeft_t0, pointsRight_t0,
                                 rotation, translation, points3D_t0, frame_pose, true);
-            
-            std::cout << "[LoopClosure] Added keyframe " << frame_id << ", total: "
-                      << loopClosure.getKeyframeCount() << std::endl;
-            
-            int keyframe_count = loopClosure.getKeyframeCount();
-            
-            if (keyframe_count >= 5) {
-                if (loopClosure.detectLoop()) {
-                    std::cout << "[LoopClosure] LOOP DETECTED! Frame: " << frame_id 
-                              << ", Candidate: " << loopClosure.getCandidateKeyframeId() << std::endl;
-                    
-                    loop_detected = true;
-                    last_loop_frame_id = frame_id;
-                    
-                    std::cout << "[LoopClosure] Loop correction ready to apply" << std::endl;
-                } else {
-                    std::cout << "[LoopClosure] No loop detected at frame " << frame_id << std::endl;
-                }
-            }
         }
         
-        if (loop_detected) {
-            std::cout << "[Main] Applying loop closure correction at frame " << frame_id << std::endl;
+        if(loop_detected) {
+            const cv::Mat R_corr = loopClosure.getLoopRotation();
+            const cv::Mat t_corr = loopClosure.getLoopTranslation();
+            const int candidate_id = loopClosure.getCandidateKeyframeId();
             
-            cv::Mat R_corr = loopClosure.getLoopRotation();
-            cv::Mat t_corr = loopClosure.getLoopTranslation();
-            
-            std::cout << "[Main] Loop correction rotation: " << R_corr << std::endl;
-            std::cout << "[Main] Loop correction translation: " << t_corr << std::endl;
-            
-            int candidate_id = loopClosure.getCandidateKeyframeId();
-            std::cout << "[Main] Candidate keyframe ID: " << candidate_id << std::endl;
-            
-            if (cv::norm(t_corr) > 1000) {
-                std::cout << "[Main] Correction translation is too large, skipping loop closure" << std::endl;
-                loop_detected = false;
-                continue;
+            const double t_norm = cv::norm(t_corr);
+            if(t_norm <= 1000) {
+                cv::Mat T_correction = cv::Mat::eye(4, 4, CV_64F);
+                R_corr.copyTo(T_correction(cv::Rect(0, 0, 3, 3)));
+                t_corr.copyTo(T_correction(cv::Rect(3, 0, 1, 3)));
+                
+                T_correction = T_correction * frame_pose;
+                T_correction.copyTo(frame_pose);
+                
+                loopClosure.applyCorrectionToKeyframes();
+                setLoopClosureCorrection(candidate_id, frame_id, R_corr, t_corr);
+                
+                std::cout << "[Main] Loop closure applied, new pose: " << frame_pose.col(3) << std::endl;
+            } else {
+                std::cout << "[Main] Correction translation is too large (" << t_norm << "), skipping loop closure" << std::endl;
             }
-            
-            cv::Mat T_correction = cv::Mat::eye(4, 4, CV_64F);
-            R_corr.copyTo(T_correction(cv::Rect(0, 0, 3, 3)));
-            t_corr.copyTo(T_correction(cv::Rect(3, 0, 1, 3)));
-            
-            cv::Mat new_frame_pose = T_correction * frame_pose;
-            
-            new_frame_pose.copyTo(frame_pose);
-            
-            // Propagate the (interpolated) correction back into LoopClosure's own
-            // keyframe history - this used to be dead code (never called), which is why
-            // corrections never actually removed accumulated drift from the trajectory.
-            loopClosure.applyCorrectionToKeyframes();
-            
-            // Apply the same interpolated correction to the trajectory buffer used by
-            // display() and logging (trajectory_coordinates.txt). This ensures the
-            // on-screen/logged trajectory is corrected, not just the live pose.
-            setLoopClosureCorrection(candidate_id, frame_id, R_corr, t_corr);
-            
-            std::cout << "[Main] Loop closure applied, new pose: " << frame_pose.col(3) << std::endl;
             
             loop_detected = false;
         }
 
-        // ------------------------------------------------
         // Integrating and display
-        // ------------------------------------------------
-        
 
         
         rotation_euler = rotationMatrixToEulerAngles(rotation);
 
         rigid_body_transformation.release();
 
-        if(abs(rotation_euler[1])<0.4*(MaxShake + 2)*abs(frame_skip) && abs(rotation_euler[0])<0.4*(MaxShake + 2)*abs(frame_skip) && abs(rotation_euler[2])<0.4*(MaxShake + 2)*abs(frame_skip))
-        {
-            integrateOdometryStereo(frame_id, rigid_body_transformation, frame_pose, 
-                               rotation, translation);
+        if(abs(rotation_euler[1]) < 0.4*(MaxShake + 2)*abs(frame_skip) && 
+           abs(rotation_euler[0]) < 0.4*(MaxShake + 2)*abs(frame_skip) && 
+           abs(rotation_euler[2]) < 0.4*(MaxShake + 2)*abs(frame_skip)) {
+            integrateOdometryStereo(frame_id, rigid_body_transformation, frame_pose, rotation, translation);
         } else {
             std::cout << "Too large rotation" << std::endl;
         }
@@ -720,29 +641,20 @@ int main()
 
         display(frame_id, trajectory, trajectory_biased, xyz, fps);
 
-        int key = cv::waitKey(1);
-        if (key == 'w')
-            {
-                frame_skip++;
-                cout << "frame_skip = " << frame_skip << endl;
+        const int key = cv::waitKey(1);
+        if(key == 'w') {
+            frame_skip++;
+            cout << "frame_skip = " << frame_skip << endl;
+        } else if(key == 's' && frame_skip > 1) {
+            frame_skip--;
+            cout << "frame_skip = " << frame_skip << endl;
+        } else if(key == 'p' || key == 27 || frame_id > 17500) {
+            if(key == 'p' || frame_id % 1000 == 0) {
+                const string traj_file = string("trajectory_Shake_") + 
+                    to_string(MaxShake) + "_FrameSkip_" + to_string(frame_skip) + ".jpg";
+                cv::imwrite(traj_file, trajectory);
             }
-        else if (key == 's' && frame_skip > 1)
-            {
-                frame_skip--;
-                cout << "frame_skip = " << frame_skip << endl;
-            }
-        else if (key == 'p' || frame_id%1000 == 0)
-            {
-            string trajectory_picture_1 = "trajectory_Shake_";
-            string trajectory_picture_2 = "FrameSkip_";
-            string trajectory_picture_3 = ".jpg";
-            string trajectory_picture = trajectory_picture_1 + to_string(MaxShake) + trajectory_picture_2 + to_string(frame_skip) + trajectory_picture_3;
-            cv::imwrite(trajectory_picture, trajectory);
-            cout << frame_id << endl;
-            }
-        else if (key == 27 || frame_id > 17500){
-
-            break;
+            if(key == 27 || frame_id > 17500) break;
         }
     }
     return 0;
