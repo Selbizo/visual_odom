@@ -447,7 +447,7 @@ bool LoopClosure::detectLoop() {
     }
     
     // Where the current frame SHOULD be in world coordinates, according to the loop match:
-    cv::Mat T_current_estimated_world = candidate_kf.full_pose * T_pnp;
+    cv::Mat T_current_estimated_world = candidate_kf.full_pose * T_pnp.inv();
     
     // Where odometry (with accumulated drift) currently thinks the current frame is:
     cv::Mat T_current_naive_world = current_kf.full_pose;

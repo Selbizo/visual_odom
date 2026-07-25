@@ -88,8 +88,8 @@ int main()
     cv::Mat frame_pose32 = cv::Mat::eye(4, 4, CV_32F);
 
     std::cout << "frame_pose " << frame_pose << std::endl;
-    cv::Mat trajectory = cv::Mat::zeros(1500, 1500, CV_8UC3);
-    cv::Mat trajectory_biased = cv::Mat::zeros(500, 500, CV_8UC3);
+    cv::Mat trajectory = cv::Mat::zeros(2500, 2500, CV_8UC3);
+    cv::Mat trajectory_biased = cv::Mat::zeros(1200, 1200, CV_8UC3);
     FeatureSet currentVOFeatures;
     FeatureSet currentVOFeatures_stab;
     cv::Mat points4D, points3D;
@@ -624,13 +624,10 @@ int main()
         // ------------------------------------------------
         // Loop closure detection
         // ------------------------------------------------
-        bool is_keyframe_for_loop = (frame_id % (50 * frame_skip) == 0);
+        bool is_keyframe_for_loop = (frame_id % (10 * frame_skip) == 0);
         
-        if (is_keyframe_for_loop && points3D_t0.rows >= 50) {
-            // NOTE: frame_pose here is the pose accumulated up to the *previous* frame
-            // (integrateOdometryStereo for the current frame runs later below), so this
-            // is off by at most one frame_skip step - negligible compared to the drift
-            // being corrected, but noted here for anyone tightening this up further.
+        if (is_keyframe_for_loop && points3D_t0.rows >= 30) {
+
             loopClosure.addFrame(frame_id, imageLeft_t1, imageRight_t1,
                                 pointsLeft_t0, pointsRight_t0,
                                 rotation, translation, points3D_t0, frame_pose, true);
@@ -686,14 +683,10 @@ int main()
             // corrections never actually removed accumulated drift from the trajectory.
             loopClosure.applyCorrectionToKeyframes();
             
-            // TODO(agent): if this VO pipeline keeps its own separate history buffer for
-            // display/logging (e.g. whatever feeds `trajectory` / trajectory_coordinates.txt),
-            // that buffer is NOT touched by applyCorrectionToKeyframes() above (it only
-            // corrects LoopClosure's internal keyframes_). Find where that buffer is
-            // populated and apply the same interpolated correction to previously recorded
-            // points between the candidate frame and this one, or the on-screen/logged
-            // trajectory will keep showing the old, uncorrected path even though the live
-            // pose has jumped.
+            // Apply the same interpolated correction to the trajectory buffer used by
+            // display() and logging (trajectory_coordinates.txt). This ensures the
+            // on-screen/logged trajectory is corrected, not just the live pose.
+            setLoopClosureCorrection(candidate_id, frame_id, R_corr, t_corr);
             
             std::cout << "[Main] Loop closure applied, new pose: " << frame_pose.col(3) << std::endl;
             
@@ -725,7 +718,7 @@ int main()
         cv::Mat xyz = frame_pose.col(3).clone(); 
         //где-то здесь нужно 
 
-        display(frame_id, trajectory, trajectory_biased, xyz, pose_matrix_gt, fps, display_ground_truth);
+        display(frame_id, trajectory, trajectory_biased, xyz, fps);
 
         int key = cv::waitKey(1);
         if (key == 'w')

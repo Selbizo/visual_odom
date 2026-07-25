@@ -26,7 +26,9 @@
 // --------------------------------
 void drawFeaturePoints(cv::Mat image, std::vector<cv::Point2f>& points);
 
-void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::Mat& pose, std::vector<Matrix>& pose_matrix_gt, float fps, bool showgt);
+void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::Mat& pose, float fps);
+
+void setLoopClosureCorrection(int candidate_frame_id, int current_frame_id, const cv::Mat& R_delta, const cv::Mat& t_delta);
 
 
 

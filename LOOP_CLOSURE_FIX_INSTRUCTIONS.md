@@ -27,7 +27,7 @@
 
 **Исправление**: composed transform. Нужно:
 1. Взять мировую позу кандидата `candidate_kf.full_pose`.
-2. Посчитать `T_current_estimated_world = candidate_kf.full_pose * T_pnp` — это то,
+2. Посчитать `T_current_estimated_world = candidate_kf.full_pose * T_pnp.inv()` — это то,
    где текущий кадр ДОЛЖЕН быть в мировых координатах согласно совпадению.
 3. Сравнить с `T_current_naive_world = current_kf.full_pose` — где одометрия (с
    накопленным дрейфом) считает, что кадр находится сейчас.
