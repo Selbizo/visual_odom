@@ -255,7 +255,9 @@ int main()
     
     LoopClosure loopClosure;
     loopClosure.setCameraParameters(projMatrl, projMatrr);
-    loopClosure.setParameters(50, 0.8f, 0.82f, 5, 15);
+    loopClosure.setParameters(30, 0.7f, 0.75f, 10, 10, 50.0f);
+    loopClosure.setMaxPoseDistance(30.0f);
+    loopClosure.setMinLoopGap(100);
 
     double MaxShake = b * (1.0 - framePart) / 2.0;
 
@@ -373,6 +375,11 @@ int main()
     cv::Mat points3D_t0_stab, points4D_t0_stab;
     cv::Vec3f rotation_euler_stab;
     cv::Mat state;
+    
+    // Переменные для отслеживания поворотов и добавления ключевых кадров
+    cv::Mat last_rotation_euler_mat = cv::Mat::zeros(3, 1, CV_64F);
+    int frames_since_last_keyframe = 0;
+    const int normal_keyframe_interval = 50;
     
     //std::vector<cv::Point2f> oldPointsLeft_t0;
     std::vector<cv::Point2f> pointsLeft_t0, pointsRight_t0, pointsLeft_t1, pointsRight_t1;
@@ -583,14 +590,9 @@ int main()
 
 
 
-        displayTracking(stabEnabled ? imageLeft_stab_t1 : imageLeft_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
+        //displayTracking(stabEnabled ? imageLeft_stab_t1 : imageLeft_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
 
-        // Loop closure detection
-        if(frame_id % (50 * frame_skip) == 0 && points3D_t0.rows >= 30) {
-            loopClosure.addFrame(frame_id, imageLeft_t1, imageRight_t1,
-                                pointsLeft_t0, pointsRight_t0,
-                                rotation, translation, points3D_t0, frame_pose, true);
-        }
+
         
         if(loop_detected) {
             const cv::Mat R_corr = loopClosure.getLoopRotation();
@@ -630,6 +632,52 @@ int main()
             integrateOdometryStereo(frame_id, rigid_body_transformation, frame_pose, rotation, translation);
         } else {
             std::cout << "Too large rotation" << std::endl;
+        }
+
+        // Проверяем поворот для определения необходимости добавления ключевого кадра
+        bool needs_keyframe_after_turn = false;
+        if (frame_id > init_frame_id + 1) {
+            cv::Mat current_euler_mat = cv::Mat(rotation_euler).clone();
+            current_euler_mat.convertTo(current_euler_mat, CV_64F);
+            
+            double yaw_change = fabs(current_euler_mat.at<double>(0, 0) - last_rotation_euler_mat.at<double>(0, 0));
+            if (yaw_change > 60.0 * DEG_TO_RAD) {
+                needs_keyframe_after_turn = true;
+            }
+            last_rotation_euler_mat = current_euler_mat.clone();
+        }
+
+        // Определяем, нужно ли добавлять кадр как ключевой
+        bool should_add_keyframe = false;
+        if (points3D_t0.rows >= 30) {
+            frames_since_last_keyframe++;
+            if (needs_keyframe_after_turn) {
+                should_add_keyframe = true;
+                frames_since_last_keyframe = 0;
+            } else if (frames_since_last_keyframe >= normal_keyframe_interval) {
+                should_add_keyframe = true;
+                frames_since_last_keyframe = 0;
+            }
+        }
+
+        // Loop closure detection - добавляем ключевые кадры и проверяем loop closure
+        if(should_add_keyframe) {
+            std::cout << "[Main] Adding keyframe " << frame_id << " (should_add_keyframe=" << should_add_keyframe 
+                      << ", needs_turn=" << needs_keyframe_after_turn 
+                      << ", frames_since=" << frames_since_last_keyframe << ")" << std::endl;
+            loopClosure.addFrame(frame_id, imageLeft_t1, imageRight_t1,
+                                pointsLeft_t0, pointsRight_t0,
+                                rotation, translation, points3D_t0, frame_pose, true);
+            
+            if(loopClosure.detectLoop()) {
+                loop_detected = true;
+                std::cout << "[Main] Loop detected! Current: " << frame_id << ", Candidate: " << loopClosure.getCandidateKeyframeId() << std::endl;
+            }
+        } else {
+            // Save keyframe points for visualization
+            if (should_add_keyframe && pointsLeft_t0.size() > 0) {
+                setKeyframePoints(frame_id, pointsLeft_t0, frame_pose);
+            }
         }
     
         t_b = clock();

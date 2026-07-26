@@ -30,6 +30,10 @@ void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::
 
 void setLoopClosureCorrection(int candidate_frame_id, int current_frame_id, const cv::Mat& R_delta, const cv::Mat& t_delta);
 
+// Keyframe visualization
+void setKeyframePoints(int frame_id, const std::vector<cv::Point2f>& keypoints, const cv::Mat& pose);
+void drawKeyframesOnTrajectory(cv::Mat& trajectory);
+
 
 
 // --------------------------------

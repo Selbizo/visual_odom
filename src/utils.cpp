@@ -2,18 +2,7 @@
 #include "evaluate_odometry.h"
 #include <fstream>
 #include <vector>
-
-
-
-// --------------------------------
-// Loop closure correction for trajectory
-// --------------------------------
-static std::vector<int> corrected_frame_ids_;
-static std::vector<cv::Mat> corrected_poses_;
-static int loop_candidate_id_ = -1;
-static int loop_current_id_ = -1;
-static cv::Mat loop_R_delta_;
-static cv::Mat loop_t_delta_;
+#include <mutex>
 
 static cv::Mat rotationMatrixFromEuler(const cv::Vec3f& euler)
 {
@@ -39,6 +28,64 @@ static cv::Mat rotationMatrixFromEuler(const cv::Vec3f& euler)
     return R;
 }
 
+// --------------------------------
+// Loop closure correction for trajectory
+// --------------------------------
+static std::vector<int> corrected_frame_ids_;
+static std::vector<cv::Mat> corrected_poses_;
+static int loop_candidate_id_ = -1;
+static int loop_current_id_ = -1;
+static cv::Mat loop_R_delta_;
+static cv::Mat loop_t_delta_;
+
+static int last_applied_frame_id_ = -1;
+
+// --------------------------------
+// Keyframe visualization
+// --------------------------------
+static std::vector<int> keyframe_frame_ids_;
+static std::vector<std::vector<cv::Point2f>> keyframe_points_;
+static std::vector<cv::Mat> keyframe_poses_;
+static std::mutex keyframe_mutex_;
+
+void drawKeyframesOnTrajectory(cv::Mat& trajectory)
+{
+    std::lock_guard<std::mutex> lock(keyframe_mutex_);
+    
+    for (size_t i = 0; i < keyframe_poses_.size(); i++) {
+        cv::Mat pose_mat = keyframe_poses_[i];
+        
+        int x = trajectory.cols/2 + int(pose_mat.at<double>(0, 3));
+        int y = trajectory.rows/2 - int(pose_mat.at<double>(2, 3));
+        
+        if (x >= 0 && x < trajectory.cols && y >= 0 && y < trajectory.rows) {
+            circle(trajectory, cv::Point(x, y), 8, CV_RGB(0, 255, 255), 2);
+            circle(trajectory, cv::Point(x, y), 10, CV_RGB(0, 128, 128), 1);
+        }
+    }
+}
+
+void setKeyframePoints(int frame_id, const std::vector<cv::Point2f>& keypoints, const cv::Mat& pose)
+{
+    std::lock_guard<std::mutex> lock(keyframe_mutex_);
+    
+    keyframe_frame_ids_.push_back(frame_id);
+    
+    std::vector<cv::Point2f> keypoints_scaled;
+    for (const auto& kp : keypoints) {
+        cv::Point2f kp_scaled(kp.x * 0.1, kp.y * 0.1);
+        keypoints_scaled.push_back(kp_scaled);
+    }
+    keyframe_points_.push_back(keypoints_scaled);
+    
+    cv::Mat pose_copy = pose.clone();
+    keyframe_poses_.push_back(pose_copy);
+}
+
+// --------------------------------
+// Loop closure correction functions
+// --------------------------------
+
 static void applyLoopClosureToTrajectory()
 {
     if (loop_candidate_id_ < 0 || loop_current_id_ < 0 || corrected_poses_.empty()) {
@@ -57,7 +104,10 @@ static void applyLoopClosureToTrajectory()
     cv::Mat rvec_delta;
     cv::Rodrigues(loop_R_delta_, rvec_delta);
     
-    for (size_t i = 0; i < corrected_frame_ids_.size(); i++) {
+    std::vector<cv::Mat> new_corrected_poses;
+    new_corrected_poses.reserve(corrected_poses_.size());
+    
+    for (size_t i = 0; i < corrected_poses_.size(); i++) {
         int frame_id = corrected_frame_ids_[i];
         
         if (frame_id > loop_candidate_id_ && frame_id < loop_current_id_) {
@@ -74,26 +124,27 @@ static void applyLoopClosureToTrajectory()
             
             cv::Mat old_pose_mat = corrected_poses_[i];
             cv::Mat new_pose_mat = T_partial * old_pose_mat;
-            new_pose_mat.copyTo(corrected_poses_[i]);
+            new_corrected_poses.push_back(new_pose_mat.clone());
         } else if (frame_id == loop_current_id_) {
             cv::Mat T_full = cv::Mat::eye(4, 4, CV_64F);
             loop_R_delta_.copyTo(T_full(cv::Rect(0, 0, 3, 3)));
             loop_t_delta_.copyTo(T_full(cv::Rect(3, 0, 1, 3)));
             cv::Mat old_pose_mat = corrected_poses_[i];
             cv::Mat new_pose_mat = T_full * old_pose_mat;
-            new_pose_mat.copyTo(corrected_poses_[i]);
+            new_corrected_poses.push_back(new_pose_mat.clone());
+        } else {
+            new_corrected_poses.push_back(corrected_poses_[i]);
         }
     }
+    
+    corrected_poses_.clear();
+    corrected_poses_.swap(new_corrected_poses);
     
     loop_candidate_id_ = -1;
     loop_current_id_ = -1;
     loop_R_delta_.release();
     loop_t_delta_.release();
 }
-
-// --------------------------------
-// Loop closure correction API
-// --------------------------------
 
 void setLoopClosureCorrection(int candidate_frame_id, int current_frame_id, const cv::Mat& R_delta, const cv::Mat& t_delta)
 {
@@ -104,6 +155,8 @@ void setLoopClosureCorrection(int candidate_frame_id, int current_frame_id, cons
         R_delta.clone().copyTo(loop_R_delta_);
         t_delta.clone().copyTo(loop_t_delta_);
     }
+    
+    last_applied_frame_id_ = current_frame_id;
 }
 
 // --------------------------------
@@ -123,11 +176,9 @@ void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::
 {
     static std::ofstream coord_file("/home/selbizo/CV/StabAndSLAM/visual_odom/trajectory_coordinates.txt");
     
-    static int last_applied_frame_id = -1;
-    
-    if (last_applied_frame_id >= 0 && frame_id > last_applied_frame_id) {
+    if (last_applied_frame_id_ >= 0 && frame_id > last_applied_frame_id_) {
         applyLoopClosureToTrajectory();
-        last_applied_frame_id = -1;
+        last_applied_frame_id_ = -1;
     }
     
     if (coord_file.is_open() && frame_id%29 == 0) {
@@ -148,13 +199,17 @@ void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::
     R.copyTo(pose_mat(cv::Rect(0, 0, 3, 3)));
     
     corrected_frame_ids_.push_back(frame_id);
-    corrected_poses_.push_back(pose_mat.clone());
+    corrected_poses_.push_back(pose_mat);
     
     // draw estimated trajectory 
     int x = trajectory.cols/2 + int(pose.at<double>(0));
     int y = trajectory.rows/2 - int(pose.at<double>(2));
     circle(trajectory, cv::Point(x, y) ,1, CV_RGB(130,180,230), 2);
-
+    
+    // Draw keyframe points periodically
+    if (frame_id % 100 == 0) {
+        drawKeyframesOnTrajectory(trajectory);
+    }
 
     cv::Mat Bias = (cv::Mat_<double>(2, 3) <<
     1, 0, -pose.at<double>(0) - (trajectory.cols - trajectory_biased.cols)/2, 
@@ -168,10 +223,8 @@ void display(int frame_id, cv::Mat& trajectory, cv::Mat& trajectory_biased, cv::
     cv::Mat temp_trajectory = trajectory * 0.98;
     temp_trajectory.copyTo(trajectory);
     temp_trajectory.release();
-    cv::waitKey(1);
+    //cv::waitKey(1);
 }
-
-
 
 // --------------------------------
 // Transformation
@@ -316,3 +369,4 @@ void loadImageRight(cv::Mat& image_color, cv::Mat& image_gary, int frame_id, std
     image_color = cv::imread(filename, cv::IMREAD_COLOR);
     cvtColor(image_color, image_gary, cv::COLOR_BGR2GRAY);
 }
+

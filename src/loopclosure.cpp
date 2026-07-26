@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 
 LoopClosure::LoopClosure() 
     : min_keypoints_(30),
@@ -9,6 +10,7 @@ LoopClosure::LoopClosure()
       strong_threshold_(0.85f),
       max_weak_candidates_(5),
       min_match_count_(20),
+      keyframe_distance_meters_(50.0f),
       last_keyframe_id_(0),
       current_keyframe_id_(0),
       loop_detected_(false),
@@ -45,16 +47,30 @@ void LoopClosure::setCameraParameters(const cv::Mat& projMatl, const cv::Mat& pr
 
 void LoopClosure::setParameters(int min_keypoints, float weak_threshold,
                                 float strong_threshold, int max_weak_candidates,
-                                int min_match_count) {
+                                int min_match_count, float keyframe_distance_meters) {
     min_keypoints_ = min_keypoints;
     weak_threshold_ = weak_threshold;
     strong_threshold_ = strong_threshold;
     max_weak_candidates_ = max_weak_candidates;
     min_match_count_ = min_match_count;
+    keyframe_distance_meters_ = keyframe_distance_meters;
 }
 
-bool LoopClosure::isKeyframe(const cv::Mat& points3D, int min_points) {
-    return !points3D.empty() && points3D.rows >= min_points;
+bool LoopClosure::isKeyframe(const cv::Mat& points3D, int min_points, const cv::Mat& current_pose, const cv::Mat& last_kf_pose, float keyframe_distance_meters) {
+    if (!points3D.empty() && points3D.rows >= min_points) {
+        if (!current_pose.empty() && !last_kf_pose.empty() && 
+            current_pose.rows == 4 && current_pose.cols == 4 &&
+            last_kf_pose.rows == 4 && last_kf_pose.cols == 4) {
+            
+            cv::Mat t1 = current_pose(cv::Rect(3, 0, 1, 3));
+            cv::Mat t2 = last_kf_pose(cv::Rect(3, 0, 1, 3));
+            
+            double distance = cv::norm(t1 - t2);
+            return distance >= keyframe_distance_meters;
+        }
+        return true;
+    }
+    return false;
 }
 
 bool LoopClosure::extractDeepFeatures(const cv::Mat& image, cv::Mat& feature_vec) {
@@ -142,17 +158,28 @@ bool LoopClosure::extractKeypointDescriptors(const cv::Mat& image,
     }
     
     feature_indices.clear();
+    feature_indices.resize(keypoints_cv.size(), -1);
+    
     for (size_t i = 0; i < keypoints_cv.size(); i++) {
         for (size_t j = 0; j < keypoints.size(); j++) {
             if (std::abs(keypoints_cv[i].pt.x - keypoints[j].x) < 1.0f &&
                 std::abs(keypoints_cv[i].pt.y - keypoints[j].y) < 1.0f) {
-                feature_indices.push_back(static_cast<int>(j));
+                feature_indices[i] = static_cast<int>(j);
                 break;
             }
         }
     }
     
-    return true;
+    // Remove any -1 values if they exist
+    size_t write_idx = 0;
+    for (size_t i = 0; i < feature_indices.size(); i++) {
+        if (feature_indices[i] >= 0) {
+            feature_indices[write_idx++] = feature_indices[i];
+        }
+    }
+    feature_indices.resize(write_idx);
+    
+    return feature_indices.size() > 0;
 }
 
 bool LoopClosure::matchDescriptors(const cv::Mat& desc1, const cv::Mat& desc2,
@@ -255,10 +282,14 @@ bool LoopClosure::poseCorrectionPnP(const std::vector<cv::Point3f>& points3D,
     K.at<double>(2, 2) = 1.0;
     
     std::vector<int> inliers;
-    cv::solvePnPRansac(points3D, points2D, K, dist_coeff, rvec, tvec,
-                      false, 100, 5.991, 0.99, inliers, cv::SOLVEPNP_ITERATIVE);
+    bool success = cv::solvePnPRansac(points3D, points2D, K, dist_coeff, rvec, tvec,
+                                      false, 200, 3.0, 0.99, inliers, cv::SOLVEPNP_ITERATIVE);
     
-    if (inliers.size() < min_match_count_) {
+    if (!success) {
+        return false;
+    }
+    
+    if (static_cast<int>(inliers.size()) < 8) {
         return false;
     }
     
@@ -276,16 +307,28 @@ bool LoopClosure::addFrame(int frame_id, const cv::Mat& image_left, const cv::Ma
                             bool force_keyframe) {
     std::lock_guard<std::mutex> lock(keyframe_mutex_);
     
-    bool is_kf = force_keyframe || isKeyframe(points3D, min_keypoints_);
+    KeyFrame last_kf;
+    bool has_last_kf = false;
+    if (!keyframes_.empty()) {
+        for (int i = static_cast<int>(keyframes_.size()) - 1; i >= 0; i--) {
+            if (keyframes_[i].is_keyframe) {
+                last_kf = keyframes_[i];
+                has_last_kf = true;
+                break;
+            }
+        }
+    }
+    
+    bool is_kf = force_keyframe || isKeyframe(points3D, min_keypoints_, world_pose, has_last_kf ? last_kf.full_pose : cv::Mat(), keyframe_distance_meters_);
     
     KeyFrame kf;
     kf.id = frame_id;
-    image_left.copyTo(kf.image);
     kf.rotation = rotation.clone();
     kf.translation = translation.clone();
     kf.keypoints = keypoints_left;
     kf.points3D = points3D;
     kf.is_keyframe = is_kf;
+    kf.last_keyframe_pose = has_last_kf ? last_kf.full_pose.clone() : cv::Mat();
     
     // IMPORTANT: full_pose must be the ACCUMULATED world pose of this frame (frame_pose
     // in main.cpp), NOT the frame-to-frame incremental rotation/translation. The loop
@@ -304,18 +347,18 @@ bool LoopClosure::addFrame(int frame_id, const cv::Mat& image_left, const cv::Ma
     
     if (is_kf) {
         cv::Mat orb_descriptors;
-        // std::cout << "[LoopClosure] Adding keyframe " << frame_id << ", image size: " << image_left.size() 
-        //           << ", channels: " << image_left.channels() << std::endl;
+        std::cout << "[LoopClosure] Adding keyframe " << frame_id << ", image size: " << image_left.size() 
+                  << ", channels: " << image_left.channels() << std::endl;
         
         if (extractDeepFeatures(image_left, kf.descriptor)) {
-            // std::cout << "[LoopClosure] Deep features extracted, size: " << kf.descriptor.size() 
-            //           << ", norm: " << cv::norm(kf.descriptor) << std::endl;
+            std::cout << "[LoopClosure] Deep features extracted, size: " << kf.descriptor.size() 
+                      << ", norm: " << cv::norm(kf.descriptor) << std::endl;
             
             if (extractKeypointDescriptors(image_left, keypoints_left, orb_descriptors, kf.desc_feat_indx)) {
                 orb_descriptors.copyTo(kf.orb_descriptor);
                 keyframes_.push_back(kf);
                 last_keyframe_id_ = frame_id;
-                // std::cout << "[LoopClosure] Keyframe " << frame_id << " added successfully" << std::endl;
+                std::cout << "[LoopClosure] Keyframe " << frame_id << " added successfully" << std::endl;
             } else {
                 std::cerr << "[LoopClosure] Failed to extract ORB descriptors for keyframe " << frame_id << std::endl;
             }
@@ -358,6 +401,7 @@ bool LoopClosure::detectLoop() {
     int num_weak_candidates = 0;
     
     std::cout << "[LoopClosure] Checking " << keyframes_.size() << " keyframes for loop closure..." << std::endl;
+    std::cout << "[LoopClosure] Current frame: " << current_kf.id << ", min_gap: " << min_loop_gap_ << std::endl;
     
     for (size_t i = 0; i < keyframes_.size() - 1; i++) {
         const KeyFrame& kf = keyframes_[i];
@@ -366,17 +410,22 @@ bool LoopClosure::detectLoop() {
             continue;
         }
         
-        if (current_kf.id - kf.id < 20) {
+        int id_diff = current_kf.id - kf.id;
+        
+        if (id_diff < min_loop_gap_) {
             continue;
         }
         
-        float similarity = computeSimilarity(current_desc, kf.descriptor);
-        // std::cout << "[LoopClosure] Comparing frame " << current_kf.id << " with " << kf.id << ": similarity=" << similarity << std::endl;
+        // For KITTI-like datasets with repeating sequences (~4449 frames per loop),
+        // reject candidates that would create implausible geometric relationships
+        if (id_diff > 4000 && id_diff < 4500) {
+            std::cout << "[LoopClosure] Rejecting candidate " << kf.id << " (id_diff=" << id_diff << ") - likely false loop from repeating sequence" << std::endl;
+            continue;
+        }
         
-        // if (similarity > 0.7f) {
-        //     std::cout << "[LoopClosure] Potential match: current=" << current_kf.id 
-        //               << ", candidate=" << kf.id << ", similarity=" << similarity << std::endl;
-        // }
+        std::cout << "[LoopClosure] Checking candidate " << kf.id << " (id_diff=" << id_diff << ")... ";
+        float similarity = computeSimilarity(current_desc, kf.descriptor);
+        std::cout << "similarity=" << similarity << std::endl;
         
         if (similarity > max_similarity) {
             max_similarity = similarity;
@@ -388,19 +437,22 @@ bool LoopClosure::detectLoop() {
         }
     }
     
-    std::cout << "[LoopClosure] Max similarity: " << max_similarity << " (id=" << keyframes_[max_sim_index].id << ")" << std::endl;
-    std::cout << "[LoopClosure] Weak candidates: " << num_weak_candidates << std::endl;
-    
-    if (max_similarity < strong_threshold_ || keyframes_.empty()) {
+    if (max_similarity < strong_threshold_) {
+        std::cout << "[LoopClosure] Similarity " << max_similarity << " below threshold " << strong_threshold_ << ", no loop detected" << std::endl;
         return false;
     }
     
     KeyFrame& candidate_kf = keyframes_[max_sim_index];
     
+    std::cout << "[LoopClosure] Best candidate: frame " << candidate_kf.id << " (index=" << max_sim_index << "), similarity=" << max_similarity << std::endl;
+    
     std::vector<cv::DMatch> matches;
     if (!matchDescriptors(candidate_kf.orb_descriptor, current_kf.orb_descriptor, matches)) {
+        std::cout << "[LoopClosure] ORB matching failed" << std::endl;
         return false;
     }
+    
+    std::cout << "[LoopClosure] ORB matches: " << matches.size() << " (min required=" << min_match_count_ << ")" << std::endl;
     
     std::vector<cv::Point3f> points3D_cand;
     std::vector<cv::Point2f> points2D_curr;
@@ -421,12 +473,16 @@ bool LoopClosure::detectLoop() {
         }
     }
     
+    std::cout << "[LoopClosure] PnP points: " << points3D_cand.size() << " (min=" << min_match_count_ << ")" << std::endl;
+    
     if (static_cast<int>(points3D_cand.size()) < min_match_count_) {
+        std::cout << "[LoopClosure] Not enough points for PnP, skipping." << std::endl;
         return false;
     }
     
     cv::Mat R_correction, t_correction;
     if (!poseCorrectionPnP(points3D_cand, points2D_curr, R_correction, t_correction)) {
+        std::cout << "[LoopClosure] PnP failed, skipping." << std::endl;
         return false;
     }
     
@@ -452,24 +508,54 @@ bool LoopClosure::detectLoop() {
     // Where odometry (with accumulated drift) currently thinks the current frame is:
     cv::Mat T_current_naive_world = current_kf.full_pose;
     
-    double det = cv::determinant(T_current_naive_world(cv::Rect(0, 0, 3, 3)));
-    if (std::abs(det) < 1e-9) {
-        std::cerr << "[LoopClosure] Degenerate current world pose, skipping correction." << std::endl;
+    // Calculate correction delta
+    cv::Mat T_delta = T_current_estimated_world * T_current_naive_world.inv();
+    
+    // Extract rotation and translation from correction
+    cv::Mat R_delta = T_delta(cv::Rect(0, 0, 3, 3));
+    cv::Mat t_delta = T_delta(cv::Rect(3, 0, 1, 3));
+    
+    // Check if correction is too large (loop between two far images is not reliable)
+    cv::Mat rvec_delta;
+    cv::Rodrigues(R_delta, rvec_delta);
+    double pose_distance_rad = cv::norm(rvec_delta);
+    double pose_distance_deg = pose_distance_rad * 180.0 / CV_PI;
+
+    std::cout << "[LoopClosure] Pose distance: " << pose_distance_deg << " degrees (max=" << max_pose_distance_between_loop_keyframes_ << ")" << std::endl;
+
+    if (pose_distance_deg > max_pose_distance_between_loop_keyframes_) {
+        std::cout << "[LoopClosure] Loop correction too large, skipping." << std::endl;
+        return false;
+    }
+
+    // Check pose difference between new and old calculation
+    cv::Mat T_diff = T_current_naive_world * T_current_estimated_world.inv();
+    cv::Mat rvec_diff;
+    cv::Rodrigues(T_diff(cv::Rect(0, 0, 3, 3)), rvec_diff);
+    double pose_diff = cv::norm(rvec_diff);
+
+    std::cout << "[LoopClosure] Pose difference: " << pose_diff << " (max=" << max_pose_differnece_between_old_new_ << ")" << std::endl;
+
+    if (pose_diff > max_pose_differnece_between_old_new_) {
+        std::cout << "[LoopClosure] Pose difference too large, skipping." << std::endl;
+        return false;
+    }
+
+    if (pose_diff < 0.01) {
+        std::cout << "[LoopClosure] Pose difference too small, skipping." << std::endl;
+        needs_correction_ = false;
         return false;
     }
     
-    // Correction delta (world frame) that removes the accumulated drift between
-    // candidate and current:
-    cv::Mat T_delta = T_current_estimated_world * T_current_naive_world.inv();
+    needs_correction_ = true;
     
-    loop_rotation_ = T_delta(cv::Rect(0, 0, 3, 3)).clone();
-    loop_translation_ = T_delta(cv::Rect(3, 0, 1, 3)).clone();
+    loop_rotation_ = R_delta.clone();
+    loop_translation_ = t_delta.clone();
     loop_correction_ = T_delta.clone();
     
     candidate_keyframe_id_ = candidate_kf.id;
     candidate_index_ = static_cast<int>(max_sim_index);
     loop_detected_ = true;
-    needs_correction_ = true;
     
     return true;
 }
@@ -501,7 +587,7 @@ void LoopClosure::applyCorrectionToKeyframes() {
     cv::Rodrigues(R_delta, rvec_delta);
     
     int corrected_count = 0;
-    for (int i = candidate_index_ + 1; i < current_index; i++) {
+    for (int i = candidate_index_ + 1; i <= current_index; i++) {
         double alpha = static_cast<double>(i - candidate_index_) / static_cast<double>(span);
         
         cv::Mat rvec_partial = rvec_delta * alpha;
@@ -514,22 +600,13 @@ void LoopClosure::applyCorrectionToKeyframes() {
         t_partial.copyTo(T_partial(cv::Rect(3, 0, 1, 3)));
         
         KeyFrame& kf = keyframes_[i];
-        cv::Mat new_pose = T_partial * kf.full_pose;
-        new_pose.copyTo(kf.full_pose);
+        kf.full_pose = T_partial * kf.full_pose;
         kf.rotation = kf.full_pose(cv::Rect(0, 0, 3, 3)).clone();
         kf.translation = kf.full_pose(cv::Rect(3, 0, 1, 3)).clone();
         corrected_count++;
     }
     
-    // The current (last) keyframe gets the FULL delta - this must be kept consistent
-    // with whatever main.cpp applies to its own live frame_pose for this frame.
-    {
-        KeyFrame& kf = keyframes_[current_index];
-        cv::Mat new_pose = loop_correction_ * kf.full_pose;
-        new_pose.copyTo(kf.full_pose);
-        kf.rotation = kf.full_pose(cv::Rect(0, 0, 3, 3)).clone();
-        kf.translation = kf.full_pose(cv::Rect(3, 0, 1, 3)).clone();
-    }
+    needs_correction_ = false;
     
     std::cout << "[LoopClosure] Interpolated correction applied to " << corrected_count
                << " keyframes between candidate " << keyframes_[candidate_index_].id

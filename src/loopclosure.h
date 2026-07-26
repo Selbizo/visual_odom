@@ -18,8 +18,6 @@
 
 struct KeyFrame {
     int id;
-    cv::Mat image;
-    cv::Mat depth;
     cv::Mat descriptor;       // Deep learning features (1000-dim)
     cv::Mat orb_descriptor;   // ORB keypoint descriptors (256-dim per descriptor)
     std::vector<int> desc_feat_indx;
@@ -30,6 +28,7 @@ struct KeyFrame {
     std::vector<cv::Point2f> keypoints_matched;
     bool is_keyframe;
     cv::Mat full_pose; // 4x4 transformation matrix
+    cv::Mat last_keyframe_pose; // 4x4 pose of previous keyframe (for distance calculation)
     
     KeyFrame() : id(0), is_keyframe(false) {}
 };
@@ -44,7 +43,8 @@ public:
                        float weak_threshold = 0.7f, 
                        float strong_threshold = 0.85f,
                        int max_weak_candidates = 5,
-                       int min_match_count = 20);
+                       int min_match_count = 20,
+                       float keyframe_distance_meters = 50.0f);
     
     // world_pose: 4x4 CV_64F ACCUMULATED pose (frame_pose) of this frame in world/start
     // coordinates. This is REQUIRED for loop-closure correction math to be correct -
@@ -69,6 +69,10 @@ public:
     
     bool needsCorrection() const { return needs_correction_; }
     
+    void setMaxPoseDistance(float value) { max_pose_distance_between_loop_keyframes_ = value; }
+    void setMaxPoseDifference(float value) { max_pose_differnece_between_old_new_ = value; }
+    void setMinLoopGap(int value) { min_loop_gap_ = value; }
+    
     void applyCorrectionToKeyframes();
     std::vector<KeyFrame> getKeyframes();
     int getKeyframeCount();
@@ -88,7 +92,7 @@ private:
     
     float computeSimilarity(const cv::Mat& vec1, const cv::Mat& vec2);
     
-    bool isKeyframe(const cv::Mat& points3D, int min_points = 50);
+    bool isKeyframe(const cv::Mat& points3D, int min_points = 50, const cv::Mat& current_pose = cv::Mat(), const cv::Mat& last_kf_pose = cv::Mat(), float keyframe_distance_meters = 50.0f);
     
     std::string model_path_;
     
@@ -101,13 +105,20 @@ private:
     int max_weak_candidates_;
     int min_match_count_;
     
+    // Loop closure validation parameters
+    float max_pose_distance_between_loop_keyframes_ = 50.0;
+    float max_pose_differnece_between_old_new_ = 10.0;
+    int min_loop_gap_ = 20;
+    
     int last_keyframe_id_;
     int current_keyframe_id_;
     bool loop_detected_;
     int candidate_keyframe_id_;
     int candidate_index_;   // index of matched candidate inside keyframes_ (needed to
-                             // interpolate the correction only over the affected span)
+                              // interpolate the correction only over the affected span)
     bool needs_correction_;
+    
+    float keyframe_distance_meters_ = 50.0f;
     
     cv::Mat loop_rotation_;
     cv::Mat loop_translation_;
