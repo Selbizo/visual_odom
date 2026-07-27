@@ -69,9 +69,27 @@ public:
     
     bool needsCorrection() const { return needs_correction_; }
     
+    float getCurrentSimilarity() const { return current_similarity_; }
+    int getMatchCount() const { return static_cast<int>(current_match_count_); }
+    cv::Mat getCurrentDescriptor() const { return current_desc_.clone(); }
+    cv::Mat getCandidateDescriptor() const { return candidate_desc_.clone(); }
+    cv::Mat getKeyframeDescriptor(int index) const { 
+        if (index < 0 || index >= static_cast<int>(keyframes_.size())) return cv::Mat();
+        return keyframes_[index].descriptor.clone();
+    }
+    float computeFrameSimilarity(int frame_id, const cv::Mat& desc) { 
+        for (const auto& kf : keyframes_) {
+            if (kf.id == frame_id && !kf.descriptor.empty()) {
+                return computeSimilarity(desc, kf.descriptor);
+            }
+        }
+        return 0.0f;
+    }
+    
     void setMaxPoseDistance(float value) { max_pose_distance_between_loop_keyframes_ = value; }
     void setMaxPoseDifference(float value) { max_pose_differnece_between_old_new_ = value; }
     void setMinLoopGap(int value) { min_loop_gap_ = value; }
+    void setDebugMode(bool debug) { debug_mode_ = debug; }
     
     void applyCorrectionToKeyframes();
     std::vector<KeyFrame> getKeyframes();
@@ -123,6 +141,13 @@ private:
     cv::Mat loop_rotation_;
     cv::Mat loop_translation_;
     cv::Mat loop_correction_;
+    
+    float current_similarity_ = 0.0f;
+    int current_match_count_ = 0;
+    cv::Mat current_desc_;
+    cv::Mat candidate_desc_;
+    
+    bool debug_mode_ = false;
     
     std::vector<KeyFrame> keyframes_;
     

@@ -95,8 +95,8 @@ int main()
     cv::Mat frame_pose32 = cv::Mat::eye(4, 4, CV_32F);
 
     std::cout << "frame_pose " << frame_pose << std::endl;
-    cv::Mat trajectory = cv::Mat::zeros(2500, 2500, CV_8UC3);
-    cv::Mat trajectory_biased = cv::Mat::zeros(1200, 1200, CV_8UC3);
+    cv::Mat trajectory = cv::Mat::zeros(3000, 3000, CV_8UC3);
+    cv::Mat trajectory_biased = cv::Mat::zeros(400, 400, CV_8UC3);
     FeatureSet currentVOFeatures;
     FeatureSet currentVOFeatures_stab;
     cv::Mat points4D, points3D;
@@ -255,9 +255,12 @@ int main()
     
     LoopClosure loopClosure;
     loopClosure.setCameraParameters(projMatrl, projMatrr);
-    loopClosure.setParameters(30, 0.7f, 0.75f, 10, 10, 50.0f);
+    loopClosure.setParameters(30, 0.6f, 0.55f, 10, 10, 50.0f);
     loopClosure.setMaxPoseDistance(30.0f);
-    loopClosure.setMinLoopGap(100);
+    loopClosure.setMinLoopGap(50);
+    loopClosure.setDebugMode(true);
+    
+    bool check_loopclosure = false;
 
     double MaxShake = b * (1.0 - framePart) / 2.0;
 
@@ -590,7 +593,7 @@ int main()
 
 
 
-        //displayTracking(stabEnabled ? imageLeft_stab_t1 : imageLeft_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
+        displayTracking(stabEnabled ? imageLeft_stab_t1 : imageLeft_t1, pointsLeft_t0, pointsLeft_t1, "vis_left"); //show input image
 
 
         
@@ -610,10 +613,6 @@ int main()
                 
                 loopClosure.applyCorrectionToKeyframes();
                 setLoopClosureCorrection(candidate_id, frame_id, R_corr, t_corr);
-                
-                std::cout << "[Main] Loop closure applied, new pose: " << frame_pose.col(3) << std::endl;
-            } else {
-                std::cout << "[Main] Correction translation is too large (" << t_norm << "), skipping loop closure" << std::endl;
             }
             
             loop_detected = false;
@@ -647,11 +646,19 @@ int main()
             last_rotation_euler_mat = current_euler_mat.clone();
         }
 
-        // Определяем, нужно ли добавлять кадр как ключевой
         bool should_add_keyframe = false;
         if (points3D_t0.rows >= 30) {
             frames_since_last_keyframe++;
-            if (needs_keyframe_after_turn) {
+            
+            if (frame_id >= 130 && frame_id <= 190) {
+                should_add_keyframe = true;
+                frames_since_last_keyframe = 0;
+                check_loopclosure = true;
+            } else if (frame_id >= 1570 && frame_id <= 1630) {
+                should_add_keyframe = true;
+                frames_since_last_keyframe = 0;
+                check_loopclosure = true;
+            } else if (needs_keyframe_after_turn) {
                 should_add_keyframe = true;
                 frames_since_last_keyframe = 0;
             } else if (frames_since_last_keyframe >= normal_keyframe_interval) {
@@ -660,24 +667,32 @@ int main()
             }
         }
 
-        // Loop closure detection - добавляем ключевые кадры и проверяем loop closure
+        // Loop closure detection - добавляем каждый кадр, но помечаем как ключевой только каждые 50 кадров
+        loopClosure.addFrame(frame_id, imageLeft_t1, imageRight_t1,
+                            pointsLeft_t0, pointsRight_t0,
+                            rotation, translation, points3D_t0, frame_pose, should_add_keyframe);
+        
         if(should_add_keyframe) {
-            std::cout << "[Main] Adding keyframe " << frame_id << " (should_add_keyframe=" << should_add_keyframe 
-                      << ", needs_turn=" << needs_keyframe_after_turn 
-                      << ", frames_since=" << frames_since_last_keyframe << ")" << std::endl;
-            loopClosure.addFrame(frame_id, imageLeft_t1, imageRight_t1,
-                                pointsLeft_t0, pointsRight_t0,
-                                rotation, translation, points3D_t0, frame_pose, true);
+            std::cout << "[Keyframe] Frame " << frame_id << " added as keyframe" << std::endl;
+        }
+        
+        if (check_loopclosure && should_add_keyframe && loopClosure.detectLoop()) {
+            loop_detected = true;
+            int candidate_id = loopClosure.getCandidateKeyframeId();
+            std::cout << "[LoopClosure] Frame " << frame_id << " <-> Frame " << candidate_id << " loop detected!" << std::endl;
             
-            if(loopClosure.detectLoop()) {
-                loop_detected = true;
-                std::cout << "[Main] Loop detected! Current: " << frame_id << ", Candidate: " << loopClosure.getCandidateKeyframeId() << std::endl;
-            }
-        } else {
-            // Save keyframe points for visualization
-            if (should_add_keyframe && pointsLeft_t0.size() > 0) {
-                setKeyframePoints(frame_id, pointsLeft_t0, frame_pose);
-            }
+            const cv::Mat current_desc = loopClosure.getCurrentDescriptor();
+            const cv::Mat candidate_desc = loopClosure.getCandidateDescriptor();
+            float similarity = loopClosure.getCurrentSimilarity();
+            std::cout << "[LoopClosure] Similarity: " << similarity << ", Candidate ID: " << candidate_id << std::endl;
+            
+            int num_matches = loopClosure.getMatchCount();
+            std::cout << "[LoopClosure] Number of matches: " << num_matches << std::endl;
+        } else if (check_loopclosure && should_add_keyframe) {
+            float max_sim = loopClosure.getCurrentSimilarity();
+            int num_checked = loopClosure.getKeyframeCount() - 1;
+            std::cout << "[LoopClosure] Frame " << frame_id << " checked " << num_checked 
+                     << " keyframes, max similarity: " << max_sim << std::endl;
         }
     
         t_b = clock();
@@ -696,13 +711,13 @@ int main()
         } else if(key == 's' && frame_skip > 1) {
             frame_skip--;
             cout << "frame_skip = " << frame_skip << endl;
-        } else if(key == 'p' || key == 27 || frame_id > 17500) {
+        } else if(key == 'p' || key == 27 || frame_id > 1580) {
             if(key == 'p' || frame_id % 1000 == 0) {
                 const string traj_file = string("trajectory_Shake_") + 
                     to_string(MaxShake) + "_FrameSkip_" + to_string(frame_skip) + ".jpg";
                 cv::imwrite(traj_file, trajectory);
             }
-            if(key == 27 || frame_id > 17500) break;
+            if(key == 27 || frame_id > 1580) break;
         }
     }
     return 0;
