@@ -20,7 +20,8 @@ LoopClosure::LoopClosure()
      debug_mode_(false),
      current_similarity_(0.0f),
      current_match_count_(0),
-     max_loop_distance_meters_(50.0f) {
+      max_loop_distance_meters_(50.0f),
+      min_keyframe_distance_meters_(50.0f) {
     
     std::string model_path = "/home/selbizo/CV/StabAndSLAM/visual_odom/src/dnn_weights/mobilenet_v2_simplified.onnx";
     
@@ -324,6 +325,27 @@ bool LoopClosure::addFrame(int frame_id, const cv::Mat& image_left, const cv::Ma
     }
     
     bool is_kf = force_keyframe || isKeyframe(points3D, min_keypoints_, world_pose, has_last_kf ? last_kf.full_pose : cv::Mat(), keyframe_distance_meters_);
+    
+    if (is_kf && !force_keyframe && min_keyframe_distance_meters_ > 0 && !world_pose.empty() && world_pose.rows == 4 && world_pose.cols == 4) {
+        double min_dist = std::numeric_limits<double>::max();
+        for (const auto& kf : keyframes_) {
+            if (kf.is_keyframe && !kf.full_pose.empty() && kf.full_pose.rows == 4 && kf.full_pose.cols == 4) {
+                cv::Mat t1 = world_pose(cv::Rect(3, 0, 1, 3));
+                cv::Mat t2 = kf.full_pose(cv::Rect(3, 0, 1, 3));
+                double dist = cv::norm(t1 - t2);
+                if (dist < min_dist) {
+                    min_dist = dist;
+                }
+            }
+        }
+        if (min_dist < min_keyframe_distance_meters_) {
+            if (debug_mode_) {
+                std::cout << "[LoopClosure] Frame " << frame_id << " skipped: min distance to existing keyframe is " 
+                         << min_dist << "m < " << min_keyframe_distance_meters_ << "m" << std::endl;
+            }
+            is_kf = false;
+        }
+    }
     
     KeyFrame kf;
     kf.id = frame_id;

@@ -91,6 +91,7 @@ public:
     void setMinLoopGap(int value) { min_loop_gap_ = value; }
     void setDebugMode(bool debug) { debug_mode_ = debug; }
     void setMaxLoopDistance(float value) { max_loop_distance_meters_ = value; }
+    void setMinKeyframeDistance(float value) { min_keyframe_distance_meters_ = value; }
     
     void applyCorrectionToKeyframes();
     std::vector<KeyFrame> getKeyframes();
@@ -129,6 +130,7 @@ private:
     float max_pose_differnece_between_old_new_ = 10.0;
     int min_loop_gap_ = 20;
     float max_loop_distance_meters_ = 50.0f;
+    float min_keyframe_distance_meters_ = 50.0f;
     
     int last_keyframe_id_;
     int current_keyframe_id_;

@@ -101,7 +101,7 @@ int main()
     FeatureSet currentVOFeatures_stab;
     cv::Mat points4D, points3D;
     int init_frame_id = 0; //126
-    int local_loop_ceiling = 4449;
+    int local_loop_ceiling = 4470;
     
     bool loop_detected = false;
     int last_loop_frame_id = -100;
@@ -258,7 +258,8 @@ int main()
     loopClosure.setParameters(30, 0.6f, 0.55f, 10, 10, 50.0f);
     loopClosure.setMaxPoseDistance(30.0f);
     loopClosure.setMinLoopGap(50);
-    loopClosure.setMaxLoopDistance(100.0f);
+    loopClosure.setMaxLoopDistance(200.0f);
+    loopClosure.setMinKeyframeDistance(50.0f);
     loopClosure.setDebugMode(true);
     
     bool check_loopclosure = false;
