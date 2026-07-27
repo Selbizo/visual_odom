@@ -258,6 +258,7 @@ int main()
     loopClosure.setParameters(30, 0.6f, 0.55f, 10, 10, 50.0f);
     loopClosure.setMaxPoseDistance(30.0f);
     loopClosure.setMinLoopGap(50);
+    loopClosure.setMaxLoopDistance(100.0f);
     loopClosure.setDebugMode(true);
     
     bool check_loopclosure = false;
@@ -677,17 +678,23 @@ int main()
         }
         
         if (check_loopclosure && should_add_keyframe && loopClosure.detectLoop()) {
-            loop_detected = true;
             int candidate_id = loopClosure.getCandidateKeyframeId();
-            std::cout << "[LoopClosure] Frame " << frame_id << " <-> Frame " << candidate_id << " loop detected!" << std::endl;
-            
-            const cv::Mat current_desc = loopClosure.getCurrentDescriptor();
-            const cv::Mat candidate_desc = loopClosure.getCandidateDescriptor();
-            float similarity = loopClosure.getCurrentSimilarity();
-            std::cout << "[LoopClosure] Similarity: " << similarity << ", Candidate ID: " << candidate_id << std::endl;
-            
-            int num_matches = loopClosure.getMatchCount();
-            std::cout << "[LoopClosure] Number of matches: " << num_matches << std::endl;
+            int min_loop_interval = 20;
+            if (frame_id - last_loop_frame_id >= min_loop_interval) {
+                loop_detected = true;
+                last_loop_frame_id = frame_id;
+                std::cout << "[LoopClosure] Frame " << frame_id << " <-> Frame " << candidate_id << " loop detected!" << std::endl;
+                
+                const cv::Mat current_desc = loopClosure.getCurrentDescriptor();
+                const cv::Mat candidate_desc = loopClosure.getCandidateDescriptor();
+                float similarity = loopClosure.getCurrentSimilarity();
+                std::cout << "[LoopClosure] Similarity: " << similarity << ", Candidate ID: " << candidate_id << std::endl;
+                
+                int num_matches = loopClosure.getMatchCount();
+                std::cout << "[LoopClosure] Number of matches: " << num_matches << std::endl;
+            } else {
+                std::cout << "[LoopClosure] Frame " << frame_id << " skip (last loop at " << last_loop_frame_id << ")" << std::endl;
+            }
         } else if (check_loopclosure && should_add_keyframe) {
             float max_sim = loopClosure.getCurrentSimilarity();
             int num_checked = loopClosure.getKeyframeCount() - 1;
@@ -711,7 +718,7 @@ int main()
         } else if(key == 's' && frame_skip > 1) {
             frame_skip--;
             cout << "frame_skip = " << frame_skip << endl;
-        } else if(key == 'p' || key == 27 || frame_id > 1580) {
+        } else if(key == 'p' || key == 27 || frame_id > 15800) {
             if(key == 'p' || frame_id % 1000 == 0) {
                 const string traj_file = string("trajectory_Shake_") + 
                     to_string(MaxShake) + "_FrameSkip_" + to_string(frame_skip) + ".jpg";

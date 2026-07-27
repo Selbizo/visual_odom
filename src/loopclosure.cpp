@@ -10,16 +10,17 @@ LoopClosure::LoopClosure()
       strong_threshold_(0.85f),
       max_weak_candidates_(5),
       min_match_count_(20),
-      keyframe_distance_meters_(50.0f),
-      last_keyframe_id_(0),
-    current_keyframe_id_(0),
-    loop_detected_(false),
-    candidate_keyframe_id_(-1),
-    candidate_index_(-1),
-    needs_correction_(false),
-    debug_mode_(false),
-    current_similarity_(0.0f),
-    current_match_count_(0) {
+       keyframe_distance_meters_(50.0f),
+       last_keyframe_id_(0),
+     current_keyframe_id_(0),
+     loop_detected_(false),
+     candidate_keyframe_id_(-1),
+     candidate_index_(-1),
+     needs_correction_(false),
+     debug_mode_(false),
+     current_similarity_(0.0f),
+     current_match_count_(0),
+     max_loop_distance_meters_(50.0f) {
     
     std::string model_path = "/home/selbizo/CV/StabAndSLAM/visual_odom/src/dnn_weights/mobilenet_v2_simplified.onnx";
     
@@ -422,6 +423,30 @@ bool LoopClosure::detectLoop() {
             continue;
         }
         
+        if (max_loop_distance_meters_ > 0) {
+            if (!kf.full_pose.empty() && !current_kf.full_pose.empty() &&
+                kf.full_pose.rows == 4 && kf.full_pose.cols == 4 &&
+                current_kf.full_pose.rows == 4 && current_kf.full_pose.cols == 4) {
+                
+                cv::Mat t_kf = kf.full_pose(cv::Rect(3, 0, 1, 3));
+                cv::Mat t_current = current_kf.full_pose(cv::Rect(3, 0, 1, 3));
+                double dist = cv::norm(t_kf - t_current);
+                
+                if (debug_mode_) {
+                    std::cout << "[LoopClosure] Checking frame " << kf.id 
+                             << ", world distance: " << dist << "m" << std::endl;
+                }
+                
+                if (dist > max_loop_distance_meters_) {
+                    if (debug_mode_) {
+                        std::cout << "[LoopClosure] Skip (too far: " << dist << "m > " 
+                                 << max_loop_distance_meters_ << "m)" << std::endl;
+                    }
+                    continue;
+                }
+            }
+        }
+        
         num_checked++;
         float similarity = computeSimilarity(current_desc, kf.descriptor);
         
@@ -562,6 +587,11 @@ bool LoopClosure::detectLoop() {
     }
     
     needs_correction_ = true;
+    
+    if (debug_mode_) {
+        std::cout << "[LoopClosure] Pose correction delta: rotation=" << pose_distance_deg << "deg, translation norm=" << cv::norm(t_delta) << std::endl;
+        std::cout << "[LoopClosure] Pose difference (new vs old): " << pose_diff << std::endl;
+    }
     
     loop_rotation_ = R_delta.clone();
     loop_translation_ = t_delta.clone();
