@@ -29,13 +29,6 @@ LoopClosure::LoopClosure()
     
     if (network_.empty()) {
         std::cerr << "[LoopClosure] Failed to load MobileNetV2 ONNX model" << std::endl;
-    } else {
-        std::cerr << "[LoopClosure] MobileNetV2 model loaded successfully" << std::endl;
-        std::vector<cv::String> layerNames = network_->getLayerNames();
-        std::cerr << "[LoopClosure] Network layers:" << std::endl;
-        for (const auto& name : layerNames) {
-            std::cerr << "  - " << name << std::endl;
-        }
     }
     
     orb_descriptor_ = cv::ORB::create(200);
@@ -80,13 +73,11 @@ bool LoopClosure::isKeyframe(const cv::Mat& points3D, int min_points, const cv::
 
 bool LoopClosure::extractDeepFeatures(const cv::Mat& image, cv::Mat& feature_vec) {
     if (network_.empty()) {
-        std::cerr << "[LoopClosure] Network is empty!" << std::endl;
         return false;
     }
     
     cv::Mat dst;
     if (image.empty()) {
-        std::cerr << "[LoopClosure] Input image is empty!" << std::endl;
         return false;
     }
     
@@ -97,7 +88,6 @@ bool LoopClosure::extractDeepFeatures(const cv::Mat& image, cv::Mat& feature_vec
     }
     
     if (dst.empty()) {
-        std::cerr << "[LoopClosure] Converted image is empty!" << std::endl;
         return false;
     }
     
@@ -109,7 +99,6 @@ bool LoopClosure::extractDeepFeatures(const cv::Mat& image, cv::Mat& feature_vec
                            cv::Scalar(0.485, 0.456, 0.406), true, false);
     
     if (blob.empty()) {
-        std::cerr << "[LoopClosure] Blob is empty!" << std::endl;
         return false;
     }
     
@@ -119,20 +108,15 @@ bool LoopClosure::extractDeepFeatures(const cv::Mat& image, cv::Mat& feature_vec
     cv::Mat output = network_->forward(feature_layer_name);
     
     if (output.empty()) {
-        std::cerr << "[LoopClosure] Network output is empty! Layer name: " << feature_layer_name << std::endl;
         return false;
     }
-    
-    // std::cout << "[LoopClosure] Network output shape: " << output.size << std::endl;
     
     output.copyTo(feature_vec);
     
     float norm = cv::norm(feature_vec);
     if (norm > 1e-6) {
         feature_vec /= norm;
-        // std::cout << "[LoopClosure] Feature extracted, norm: " << norm << std::endl;
     } else {
-        std::cerr << "[LoopClosure] Feature norm is too small: " << norm << std::endl;
         return false;
     }
     
@@ -219,32 +203,19 @@ bool LoopClosure::matchDescriptors(const cv::Mat& desc1, const cv::Mat& desc2,
 }
 
 float LoopClosure::computeSimilarity(const cv::Mat& vec1, const cv::Mat& vec2) {
-    // std::cerr << "[LoopClosure] computeSimilarity called: vec1=" << vec1.size() << " vec2=" << vec2.size() << std::endl;
-    
     if (vec1.empty() || vec2.empty()) {
-        std::cerr << "[LoopClosure] computeSimilarity: empty input" << std::endl;
-        return 0.0f;
-    }
-    
-    if (vec1.type() != vec2.type()) {
-        std::cerr << "[LoopClosure] computeSimilarity: type mismatch" << std::endl;
         return 0.0f;
     }
     
     cv::Mat v1 = vec1.reshape(1, 1);
     cv::Mat v2 = vec2.reshape(1, 1);
     
-    // std::cerr << "[LoopClosure] computeSimilarity: v1=" << v1.size() << " v2=" << v2.size() << std::endl;
-    
     if (v1.cols != v2.cols) {
-        // std::cerr << "[LoopClosure] computeSimilarity: column mismatch " << v1.cols << " vs " << v2.cols << std::endl;
         return 0.0f;
     }
     
     int len = v1.cols;
     float sum = 0.0f;
-    
-    // std::cerr << "[LoopClosure] computeSimilarity: computing dot product of length " << len << std::endl;
     
     if (v1.type() == CV_32F) {
         const float* p1 = v1.ptr<float>();
@@ -259,11 +230,8 @@ float LoopClosure::computeSimilarity(const cv::Mat& vec1, const cv::Mat& vec2) {
             sum += static_cast<float>(p1[i] * p2[i]);
         }
     } else {
-        std::cerr << "[LoopClosure] computeSimilarity: unsupported type" << std::endl;
         return 0.0f;
     }
-    
-    // std::cerr << "[LoopClosure] computeSimilarity: result=" << sum << std::endl;
     
     return sum;
 }
@@ -366,34 +334,28 @@ bool LoopClosure::addFrame(int frame_id, const cv::Mat& image_left, const cv::Ma
             kf.full_pose.convertTo(kf.full_pose, CV_64F);
         }
     } else {
-        std::cerr << "[LoopClosure] WARNING: world_pose is not 4x4, falling back to identity "
-                   "for keyframe " << frame_id << " (loop correction will be unreliable)" << std::endl;
         kf.full_pose = cv::Mat::eye(4, 4, CV_64F);
+        if (debug_mode_) {
+            std::cerr << "[LoopClosure] WARNING: world_pose is not 4x4, falling back to identity "
+                      "for keyframe " << frame_id << std::endl;
+        }
     }
     
     if (is_kf) {
-        cv::Mat orb_descriptors;
-        std::cout << "[LoopClosure] Adding keyframe " << frame_id << ", image size: " << image_left.size() 
-                  << ", channels: " << image_left.channels() << std::endl;
-        
-        if (extractDeepFeatures(image_left, kf.descriptor)) {
-            std::cout << "[LoopClosure] Deep features extracted, size: " << kf.descriptor.size() 
-                      << ", norm: " << cv::norm(kf.descriptor) << std::endl;
-            
-            if (extractKeypointDescriptors(image_left, keypoints_left, orb_descriptors, kf.desc_feat_indx)) {
-                orb_descriptors.copyTo(kf.orb_descriptor);
-                keyframes_.push_back(kf);
-                last_keyframe_id_ = frame_id;
-                std::cout << "[LoopClosure] Keyframe " << frame_id << " added successfully" << std::endl;
-            } else {
-                std::cerr << "[LoopClosure] Failed to extract ORB descriptors for keyframe " << frame_id << std::endl;
-            }
-        } else {
-            std::cerr << "[LoopClosure] Failed to extract deep features for keyframe " << frame_id << std::endl;
+        last_keyframe_id_ = frame_id;
+        if (debug_mode_) {
+            std::cout << "[LoopClosure] Keyframe " << frame_id << " added" << std::endl;
         }
-    } else {
-        keyframes_.push_back(kf);
     }
+    
+    // Извлекаем дескрипторы для каждого кадра для проверки loop closure
+    cv::Mat orb_descriptors;
+    if (kf.descriptor.empty() && extractDeepFeatures(image_left, kf.descriptor)) {
+        extractKeypointDescriptors(image_left, keypoints_left, orb_descriptors, kf.desc_feat_indx);
+        orb_descriptors.copyTo(kf.orb_descriptor);
+    }
+    
+    keyframes_.push_back(kf);
     
     current_keyframe_id_ = frame_id;
     
@@ -674,9 +636,11 @@ void LoopClosure::applyCorrectionToKeyframes() {
     
     needs_correction_ = false;
     
-    std::cout << "[LoopClosure] Interpolated correction applied to " << corrected_count
-               << " keyframes between candidate " << keyframes_[candidate_index_].id
-               << " and current " << keyframes_[current_index].id << std::endl;
+    if (debug_mode_) {
+        std::cout << "[LoopClosure] Interpolated correction applied to " << corrected_count
+                   << " keyframes between candidate " << keyframes_[candidate_index_].id
+                   << " and current " << keyframes_[current_index].id << std::endl;
+    }
 }
 
 std::vector<KeyFrame> LoopClosure::getKeyframes() {

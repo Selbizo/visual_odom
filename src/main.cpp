@@ -262,7 +262,7 @@ int main()
     loopClosure.setMinKeyframeDistance(50.0f);
     loopClosure.setDebugMode(true);
     
-    bool check_loopclosure = false;
+    bool check_loopclosure = true;
 
     double MaxShake = b * (1.0 - framePart) / 2.0;
 
@@ -384,7 +384,7 @@ int main()
     // Переменные для отслеживания поворотов и добавления ключевых кадров
     cv::Mat last_rotation_euler_mat = cv::Mat::zeros(3, 1, CV_64F);
     int frames_since_last_keyframe = 0;
-    const int normal_keyframe_interval = 50;
+    const int normal_keyframe_interval = 10;
     
     //std::vector<cv::Point2f> oldPointsLeft_t0;
     std::vector<cv::Point2f> pointsLeft_t0, pointsRight_t0, pointsLeft_t1, pointsRight_t1;
@@ -652,15 +652,7 @@ int main()
         if (points3D_t0.rows >= 30) {
             frames_since_last_keyframe++;
             
-            if (frame_id >= 130 && frame_id <= 190) {
-                should_add_keyframe = true;
-                frames_since_last_keyframe = 0;
-                check_loopclosure = true;
-            } else if (frame_id >= 1570 && frame_id <= 1630) {
-                should_add_keyframe = true;
-                frames_since_last_keyframe = 0;
-                check_loopclosure = true;
-            } else if (needs_keyframe_after_turn) {
+            if (needs_keyframe_after_turn) {
                 should_add_keyframe = true;
                 frames_since_last_keyframe = 0;
             } else if (frames_since_last_keyframe >= normal_keyframe_interval) {
@@ -669,7 +661,7 @@ int main()
             }
         }
 
-        // Loop closure detection - добавляем каждый кадр, но помечаем как ключевой только каждые 50 кадров
+        // Loop closure detection - добавляем каждый кадр с дескриптором
         loopClosure.addFrame(frame_id, imageLeft_t1, imageRight_t1,
                             pointsLeft_t0, pointsRight_t0,
                             rotation, translation, points3D_t0, frame_pose, should_add_keyframe);
@@ -678,7 +670,7 @@ int main()
             std::cout << "[Keyframe] Frame " << frame_id << " added as keyframe" << std::endl;
         }
         
-        if (check_loopclosure && should_add_keyframe && loopClosure.detectLoop()) {
+        if (check_loopclosure && loopClosure.detectLoop()) {
             int candidate_id = loopClosure.getCandidateKeyframeId();
             int min_loop_interval = 20;
             if (frame_id - last_loop_frame_id >= min_loop_interval) {
@@ -696,7 +688,7 @@ int main()
             } else {
                 std::cout << "[LoopClosure] Frame " << frame_id << " skip (last loop at " << last_loop_frame_id << ")" << std::endl;
             }
-        } else if (check_loopclosure && should_add_keyframe) {
+        } else if (check_loopclosure && loopClosure.getCurrentSimilarity() > 0.5f) {
             float max_sim = loopClosure.getCurrentSimilarity();
             int num_checked = loopClosure.getKeyframeCount() - 1;
             std::cout << "[LoopClosure] Frame " << frame_id << " checked " << num_checked 
