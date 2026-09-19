@@ -62,7 +62,7 @@ int main()
     std::vector<Matrix> pose_matrix_gt;
     
     // Sequence
-    constexpr const char* filepath = "/home/selbizo/CV/dataset/sequences/00/";
+    constexpr const char* filepath = "/mnt/data/KITTY/data_odometry_gray/dataset/sequences/00/";
     cout << "Filepath: " << filepath << endl;
 
     constexpr const char* rgbd_str = "rgbd";
@@ -72,7 +72,7 @@ int main()
     else if(filepath == camera_str) use_camera = true;
 
     // Camera calibration
-    constexpr const char* strSettingPath = "../calibration/kitti00.yaml";
+    constexpr const char* strSettingPath = "calibration/kitti00.yaml";
     cout << "Calibration Filepath: " << strSettingPath << endl;
 
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);

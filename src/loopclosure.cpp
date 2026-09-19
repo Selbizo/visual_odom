@@ -23,7 +23,7 @@ LoopClosure::LoopClosure()
       max_loop_distance_meters_(50.0f),
       min_keyframe_distance_meters_(50.0f) {
     
-    std::string model_path = "/home/selbizo/CV/StabAndSLAM/visual_odom/src/dnn_weights/mobilenet_v2_simplified.onnx";
+    std::string model_path = "src/dnn_weights/mobilenet_v2_simplified.onnx";
     
     network_ = cv::makePtr<cv::dnn::Net>(cv::dnn::readNetFromONNX(model_path));
     

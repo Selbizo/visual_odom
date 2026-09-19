@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 set (CMAKE_CXX_STANDARD 17)
+set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda-12.8)
 project(VisualOdometry)
 
 option(USE_CUDA "Using CUDA to accelerate" ON)
