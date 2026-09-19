@@ -1,55 +1,70 @@
-## Stereo Visual Odometry
-![example workflow](https://github.com/ZhenghaoFei/visual_odom/actions/workflows/cmake.yml/badge.svg)
+# Visual Odometry (CUDA, KITTI seq 00)
 
-This repository is C++ OpenCV implementation of Stereo Visual Odometry, using OpenCV `calcOpticalFlowPyrLK` for feature tracking.
+Визуальная одометрия на GPU для стерео-последовательности KITTI 00. Читает кадры из директории `image_0/` и `image_1/`, вычисляет траекторию, делает зацикливание кадров и поиск петель (loop closure).
 
-Reference Paper: https://lamor.fer.hr/images/50020776/Cvisic2017.pdf
-
-Demo video: https://www.youtube.com/watch?v=Z3S5J_BHQVw&t=17s
-
-![alt text](https://github.com/ZhenghaoFei/visual_odom/blob/master/images/features.png "features")
-
-![alt text](https://github.com/ZhenghaoFei/visual_odom/blob/master/images/trajectory.png "trajectory")
-
-### Requirements
-[OpenCV 3.0](https://opencv.org/)  
-If you are not using CUDA:  
-```bash
-sudo apt update
-sudo apt install libopencv-dev 
-```
-If you use CUDA, compile and install CUDA enabled OPENCV. check [InstallOPENCV.md](https://github.com/ZhenghaoFei/visual_odom/blob/master/InstallOPENCV.md)
-
-### Dataset
-Tested on [KITTI](http://www.cvlibs.net/datasets/kitti/eval_odometry.php) odometry dataset.
-
-### Compile & Run
-```bash
-git clone https://github.com/ZhenghaoFei/visual_odom.git
-```
-The system use **Camera Parameters** in calibration/xx.yaml, put your own camera parameters in the same format and pass the path when you run.
+## Сборка
 
 ```bash
-mkdir build
-cd build
-cmake ..
-make -j4
-./run ./home/selbizo/CV/dataset/sequences/00/ ../calibration/kitti00.yaml
+cd /home/selbizo-pc/CV_projects/visual_odom
+cmake -B build
+cmake --build build --target run
 ```
-# ./run /PathToKITTI/sequences/00/ ../calibration/kitti00.yaml
 
-### GPU CUDA acceleration
-Thanks to [temburuyk](https://github.com/ZhenghaoFei/visual_odom/commits?author=temburuyk), the most time consumtion function `circularMatching()` can be accelerated using CUDA and greately improve the performance. 60~80 FPS on a decent NVIDIA Card. 
-To enable GPU acceleration
-1. Make sure you have CUDA compatible GPU.
-2. Install CUDA, compile and install CUDA supported OpenCV 
-3. When compiling, use 
+Готовый бинарник: `build/run`.
+
+> Требуется NVIDIA GPU с установленным CUDA и OpenCV, собранным под тот же CUDA.
+
+## Запуск
+
+Базовый запуск (используется последовательность по умолчанию):
+
 ```bash
-cmake .. -DUSE_CUDA=on
+./build/run
 ```
-4. Compile & Run
 
-### Reference code
-1. [Monocular visual odometry algorithm](https://github.com/avisingh599/mono-vo/blob/master/README.md)
+Запуск с указанием директории последовательности:
 
-2. [Matlab implementation of SOFT](https://github.com/Mayankm96/Stereo-Odometry-SOFT/blob/master/README.md)
+```bash
+./build/run --filepath=/mnt/data/KITTY/data_odometry_gray/dataset/sequences/00
+```
+
+> `--filepath` должен указывать на саму директорию последовательности (там, где лежат подпапки `image_0/` и `image_1/`). Внутри программы кадры ищутся в `image_0/%06d.png` и `image_1/%06d.png`.
+
+> Приложение показывает кадры через `imshow`, поэтому запускать нужно с активным дисплеем (не headless).
+
+## Аргументы командной строки
+
+| Аргумент                 | Значение по умолчанию | Описание                                                                                     |
+|--------------------------|------------------------|-----------------------------------------------------------------------------------------------|
+| `--frame_skip <n>`       | `1`                    | Пропускать каждые n кадров в основном цикле. `1` — каждый кадр.                                |
+| `--filepath=<dir>`       | `/mnt/data/KITTY/.../00` | Директория последовательности KITTI 00 (содержит подпапки `image_0/` и `image_1/`).          |
+| `--DUPLICATE_THRESHOLD <t>` | `20.0`              | Порог дублирования характерных точек в пикселях. Значение — квадрат расстояния (px²). Чем больше, тем меньше характерных точек добавляется при повторном посещении одной и той же области (актуально для зацикленных последовательностей и loop closure). |
+
+Пример полного запуска:
+
+```bash
+./build/run --DUPLICATE_THRESHOLD 50 --frame_skip 7 --filepath=/mnt/data/KITTY/data_odometry_gray/dataset/sequences/00
+```
+
+## Зацикливание кадров
+
+Количество кадров в директории определяется автоматически при старте программы:
+
+- Считаются PNG-файлы в подпапке `image_0/` (через `std::filesystem`).
+- Для последовательности 00 это **4541 кадр** (индексы `000000.png` … `004540.png`).
+- В основном цикле индекс кадра берётся по модулю от этого числа (`local_loop_ceiling`), поэтому после прохождения всей последовательности кадры зацикливаются и программа продолжает работу с начала.
+
+## Структура директории KITTI 00 (пример)
+
+```
+/mnt/data/KITTY/data_odometry_gray/dataset/sequences/00/
+├── calibration/
+│   └── kitti00.yaml          # калибровка камер (обязательна, лежит рядом с последовательностью)
+├── image_0/                  # левая камера: 000000.png … 004540.png
+└── image_1/                  # правая камера: 000000.png … 004540.png
+```
+
+## Примечания
+
+- Debug-вывод отключен (`setDebugMode(false)`), поэтому в терминал не пишутся строки `[LoopClosure] ...`.
+- Вывод калибровочных матриц `P_left` / `P_right` и начальной позы остаётся (это не debug-информация).

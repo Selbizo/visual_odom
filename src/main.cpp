@@ -7,6 +7,8 @@
 #include <vector>
 #include <ctime>
 #include <string>
+#include <filesystem>
+#include <glob.h>
 
 #include "feature.h"
 #include "utils.h"
@@ -122,7 +124,25 @@ int main(int argc, char **argv)
     FeatureSet currentVOFeatures_stab;
     cv::Mat points4D, points3D;
     int init_frame_id = 0; //126
-    int local_loop_ceiling = 4470;
+    
+    // Count frames in the image directory for proper looping
+    std::string filepath_str(filepath);
+    std::string left_image_path = filepath_str + "image_0/";
+    int total_frames = 0;
+    
+    // Use filesystem to count PNG files
+    namespace fs = std::filesystem;
+    if (fs::exists(left_image_path) && fs::is_directory(left_image_path)) {
+        for (const auto& entry : fs::directory_iterator(left_image_path)) {
+            if (entry.path().extension() == ".png") {
+                total_frames++;
+            }
+        }
+    }
+    
+    int local_loop_ceiling = total_frames > 0 ? total_frames : 4470;
+    
+    std::cout << "Total frames in dataset: " << total_frames << std::endl;
     
     bool loop_detected = false;
     int last_loop_frame_id = -100;

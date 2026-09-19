@@ -271,15 +271,58 @@ void appendNewFeatures(cv::Mat& image, FeatureSet& current_features)
     std::vector<cv::Point2f>  points_new;
     featureDetectionFast(image, points_new);
     //featureDetectionGoodFeaturesToTrack(image, points_new);
-    current_features.points.insert(current_features.points.end(), points_new.begin(), points_new.end());
-    std::vector<int>  ages_new(points_new.size(), 0);
+    
+    // Filter out points that are already present (within 10 pixels)
+    // to avoid duplicates when revisiting the same area (loop closure scenarios)
+    const float DUPLICATE_THRESHOLD = 10.0f;
+    std::vector<cv::Point2f> filtered_points;
+    filtered_points.reserve(points_new.size());
+    
+    for (const auto& new_pt : points_new) {
+        bool is_duplicate = false;
+        for (const auto& existing_pt : current_features.points) {
+            float dx = new_pt.x - existing_pt.x;
+            float dy = new_pt.y - existing_pt.y;
+            if (dx*dx + dy*dy < DUPLICATE_THRESHOLD * DUPLICATE_THRESHOLD) {
+                is_duplicate = true;
+                break;
+            }
+        }
+        if (!is_duplicate) {
+            filtered_points.push_back(new_pt);
+        }
+    }
+    
+    current_features.points.insert(current_features.points.end(), filtered_points.begin(), filtered_points.end());
+    std::vector<int>  ages_new(filtered_points.size(), 0);
     current_features.ages.insert(current_features.ages.end(), ages_new.begin(), ages_new.end());
 }
 
 void appendNewFeatures(std::vector<cv::Point2f> points_new, FeatureSet& current_features)
 {
-    current_features.points.insert(current_features.points.end(), points_new.begin(), points_new.end());
-    std::vector<int>  ages_new(points_new.size(), 0);
+    // Filter out points that are already present (within 10 pixels)
+    // to avoid duplicates when revisiting the same area (loop closure scenarios)
+    const float DUPLICATE_THRESHOLD = 10.0f;
+    std::vector<cv::Point2f> filtered_points;
+    filtered_points.reserve(points_new.size());
+    
+    for (const auto& new_pt : points_new) {
+        bool is_duplicate = false;
+        for (const auto& existing_pt : current_features.points) {
+            float dx = new_pt.x - existing_pt.x;
+            float dy = new_pt.y - existing_pt.y;
+            if (dx*dx + dy*dy < DUPLICATE_THRESHOLD * DUPLICATE_THRESHOLD) {
+                is_duplicate = true;
+                break;
+            }
+        }
+        if (!is_duplicate) {
+            filtered_points.push_back(new_pt);
+        }
+    }
+    
+    current_features.points.insert(current_features.points.end(), filtered_points.begin(), filtered_points.end());
+    std::vector<int>  ages_new(filtered_points.size(), 0);
     current_features.ages.insert(current_features.ages.end(), ages_new.begin(), ages_new.end());
 }
 
@@ -293,7 +336,28 @@ void appendNewFeatures(cv::Ptr<cv::cuda::CornersDetector>& d_features, cv::Mat& 
     d_features->detect(gImage, gP0);
 		gP0.download(points_new);
 	
-    current_features.points.insert(current_features.points.end(), points_new.begin(), points_new.end());
-    std::vector<int>  ages_new(points_new.size(), 0);
+    // Filter out points that are already present (within 10 pixels)
+    // to avoid duplicates when revisiting the same area (loop closure scenarios)
+    const float DUPLICATE_THRESHOLD = 10.0f;
+    std::vector<cv::Point2f> filtered_points;
+    filtered_points.reserve(points_new.size());
+    
+    for (const auto& new_pt : points_new) {
+        bool is_duplicate = false;
+        for (const auto& existing_pt : current_features.points) {
+            float dx = new_pt.x - existing_pt.x;
+            float dy = new_pt.y - existing_pt.y;
+            if (dx*dx + dy*dy < DUPLICATE_THRESHOLD * DUPLICATE_THRESHOLD) {
+                is_duplicate = true;
+                break;
+            }
+        }
+        if (!is_duplicate) {
+            filtered_points.push_back(new_pt);
+        }
+    }
+    
+    current_features.points.insert(current_features.points.end(), filtered_points.begin(), filtered_points.end());
+    std::vector<int>  ages_new(filtered_points.size(), 0);
     current_features.ages.insert(current_features.ages.end(), ages_new.begin(), ages_new.end());
 }
