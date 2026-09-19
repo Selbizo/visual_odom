@@ -26,15 +26,37 @@
 using namespace std;
 using namespace cv;
 
-// int main(int argc, char **argv)
-int main()
+// Parse command-line arguments (e.g. --frame_skip 1)
+int main(int argc, char **argv)
 {
     #if USE_CUDA
         printf("CUDA is Enabled\n");
     #endif
 
+    int frame_skip = 1;
+    float duplicate_threshold = 20.0f;
+    // Forward declaration: defined in feature.cpp, used to seed the global threshold from CLI.
+    const char* filepath_arg = nullptr;
+    // Parse command-line arguments: --frame_skip <n> and --filepath=<dir>
+    for (int i = 1; i < argc; ++i)
+    {
+        std::string arg = argv[i];
+        if(arg == "--frame_skip")
+        {
+            if(i + 1 < argc) frame_skip = std::atoi(argv[++i]);
+        }
+        else if(arg.rfind("--filepath=", 0) == 0)
+        {
+            filepath_arg = argv[i] + strlen("--filepath=");
+        }
+        else if(arg == "--DUPLICATE_THRESHOLD")
+        {
+            if(i + 1 < argc) duplicate_threshold = std::atof(argv[++i]);
+        }
+    }
+
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    	//~~~~~~~~~~~~~~~~~~~~~~~~~~~Для отображения надписей на кадре~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~Для отображения надписей на кадре~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	int fontFace = FONT_HERSHEY_SIMPLEX;
 
 	double fontScale = 0.7;
@@ -61,8 +83,8 @@ int main()
     bool use_camera = false;
     std::vector<Matrix> pose_matrix_gt;
     
-    // Sequence
-    constexpr const char* filepath = "/mnt/data/KITTY/data_odometry_gray/dataset/sequences/00/";
+    // Sequence (overridable via --filepath=<dir>)
+    const char* filepath = filepath_arg != nullptr ? filepath_arg : "/mnt/data/KITTY/data_odometry_gray/dataset/sequences/00/";
     cout << "Filepath: " << filepath << endl;
 
     constexpr const char* rgbd_str = "rgbd";
@@ -80,7 +102,6 @@ int main()
         cerr << "Error: Cannot open calibration file " << strSettingPath << endl;
         return -1;
     }
-    int frame_skip = 1;
 
     // -----------------------------------------
     // Initialize variables
@@ -260,8 +281,8 @@ int main()
     loopClosure.setMinLoopGap(50);
     loopClosure.setMaxLoopDistance(200.0f);
     loopClosure.setMinKeyframeDistance(50.0f);
-    loopClosure.setDebugMode(true);
-    
+    loopClosure.setDebugMode(false);
+
     bool check_loopclosure = true;
 
     double MaxShake = b * (1.0 - framePart) / 2.0;
@@ -672,7 +693,7 @@ int main()
         
         if (check_loopclosure && loopClosure.detectLoop()) {
             int candidate_id = loopClosure.getCandidateKeyframeId();
-            int min_loop_interval = 20;
+            int min_loop_interval = 500;
             if (frame_id - last_loop_frame_id >= min_loop_interval) {
                 loop_detected = true;
                 last_loop_frame_id = frame_id;
