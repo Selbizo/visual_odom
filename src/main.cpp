@@ -311,6 +311,12 @@ int main(int argc, char **argv)
     loopClosure.setMinLoopGap(50);
     loopClosure.setMaxLoopDistance(200.0f);
     loopClosure.setMinKeyframeDistance(50.0f);
+    // SLAM-style keyframe selection policy: azimuth gate, directional ellipse and time floor.
+    loopClosure.setAzimuthThresholdDeg(60.0f);          // create KF only after heading change >= 60 deg since last KF
+    loopClosure.setEllipseAxes(12.0f, 5.0f);            // a along viewing dir (forward/back), b lateral
+    loopClosure.setMinKeyframeTimeDeltaS(1.0f);         // minimum synthetic time gap between keyframes
+    loopClosure.setSyntheticFramePeriod(0.1, 1);        // synthetic per-frame period for timestamps
+    loopClosure.setKeyframePolicyOr(true);              // true: KF if (turn OR spatially isolated) & time; false: strict AND
     loopClosure.setDebugMode(false);
 
     bool check_loopclosure = true;

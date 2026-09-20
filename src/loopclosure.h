@@ -29,8 +29,9 @@ struct KeyFrame {
     bool is_keyframe;
     cv::Mat full_pose; // 4x4 transformation matrix
     cv::Mat last_keyframe_pose; // 4x4 pose of previous keyframe (for distance calculation)
-    
-    KeyFrame() : id(0), is_keyframe(false) {}
+    double timestamp_; // synthetic absolute time in seconds (frame_id * frame_period)
+
+    KeyFrame() : id(0), is_keyframe(false), timestamp_(0.0) {}
 };
 
 class LoopClosure {
@@ -92,7 +93,13 @@ public:
     void setDebugMode(bool debug) { debug_mode_ = debug; }
     void setMaxLoopDistance(float value) { max_loop_distance_meters_ = value; }
     void setMinKeyframeDistance(float value) { min_keyframe_distance_meters_ = value; }
-    
+
+    void setAzimuthThresholdDeg(float value) { azimuth_threshold_deg_ = value; }
+    void setEllipseAxes(float major_meters, float minor_meters) { ellipse_major_m_ = major_meters; ellipse_minor_m_ = minor_meters; }
+    void setMinKeyframeTimeDeltaS(float value) { min_keyframe_time_delta_s_ = value; }
+    void setSyntheticFramePeriod(float period_seconds, int skip = 1) { synthetic_dt_s_ = period_seconds * std::max(1, skip); }
+    void setKeyframePolicyOr(bool or_policy) { use_or_policy_ = or_policy; }
+
     void applyCorrectionToKeyframes();
     std::vector<KeyFrame> getKeyframes();
     int getKeyframeCount();
@@ -112,8 +119,11 @@ private:
     
     float computeSimilarity(const cv::Mat& vec1, const cv::Mat& vec2);
     
-    bool isKeyframe(const cv::Mat& points3D, int min_points = 50, const cv::Mat& current_pose = cv::Mat(), const cv::Mat& last_kf_pose = cv::Mat(), float keyframe_distance_meters = 50.0f);
-    
+    bool isKeyframe(const cv::Mat& points3D, int min_points, const cv::Mat& world_pose, const KeyFrame& last_kf, bool has_last_kf, double timestamp_curr);
+
+    double azimuthDeg(const cv::Mat& R) const;
+    bool anyKeyframeInsideEllipsoid(const cv::Mat& P_curr, const cv::Vec3d& d_hat, float a_meters, float b_meters) const;
+
     std::string model_path_;
     
     cv::Mat projMatl_;
@@ -131,7 +141,15 @@ private:
     int min_loop_gap_ = 20;
     float max_loop_distance_meters_ = 50.0f;
     float min_keyframe_distance_meters_ = 50.0f;
-    
+
+    // SLAM-style keyframe selection policy parameters
+    float azimuth_threshold_deg_ = 60.0f;   // required orientation (azimuth) change since last KF
+    float ellipse_major_m_ = 12.0f;         // semi-axis along viewing direction (forward/backward)
+    float ellipse_minor_m_ = 5.0f;          // semi-axis perpendicular to viewing direction
+    float min_keyframe_time_delta_s_ = 1.0f;// minimum synthetic time gap between keyframes
+    float synthetic_dt_s_ = 0.1f;           // synthetic per-frame period (seconds) used for timestamps
+    bool use_or_policy_ = true;             // true: KF if (turn OR spatially isolated); false: strict AND
+
     int last_keyframe_id_;
     int current_keyframe_id_;
     bool loop_detected_;

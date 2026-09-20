@@ -54,19 +54,91 @@ void LoopClosure::setParameters(int min_keypoints, float weak_threshold,
     keyframe_distance_meters_ = keyframe_distance_meters;
 }
 
-bool LoopClosure::isKeyframe(const cv::Mat& points3D, int min_points, const cv::Mat& current_pose, const cv::Mat& last_kf_pose, float keyframe_distance_meters) {
-    if (!points3D.empty() && points3D.rows >= min_points) {
-        if (!current_pose.empty() && !last_kf_pose.empty() && 
-            current_pose.rows == 4 && current_pose.cols == 4 &&
-            last_kf_pose.rows == 4 && last_kf_pose.cols == 4) {
-            
-            cv::Mat t1 = current_pose(cv::Rect(3, 0, 1, 3));
-            cv::Mat t2 = last_kf_pose(cv::Rect(3, 0, 1, 3));
-            
-            double distance = cv::norm(t1 - t2);
-            return distance >= keyframe_distance_meters;
-        }
+bool LoopClosure::isKeyframe(const cv::Mat& points3D, int min_points, const cv::Mat& world_pose,
+                             const KeyFrame& last_kf, bool has_last_kf, double timestamp_curr) {
+    // Quality precondition: a keyframe needs enough reconstructed 3D points.
+    if (points3D.empty() || points3D.rows < min_points) {
+        return false;
+    }
+
+    // First keyframe (no reference yet): accept based on point quality alone.
+    bool pose_valid = has_last_kf && !world_pose.empty() && world_pose.rows == 4 && world_pose.cols == 4 &&
+                      !last_kf.full_pose.empty() && last_kf.full_pose.rows == 4;
+    if (!pose_valid) {
         return true;
+    }
+
+    // Orientation change (azimuth / yaw delta) between current pose and last keyframe.
+    cv::Mat R_curr = world_pose(cv::Rect(0, 0, 3, 3));
+    cv::Mat R_ref = last_kf.full_pose(cv::Rect(0, 0, 3, 3));
+    double dz = azimuthDeg(R_curr) - azimuthDeg(R_ref);
+    if (dz > 180.0) {
+        dz -= 360.0;
+    } else if (dz < -180.0) {
+        dz += 360.0;
+    }
+    double orient_deg = std::fabs(dz);
+
+    // Time floor: never create a keyframe sooner than the minimum synthetic gap.
+    bool time_ok = (timestamp_curr - last_kf.timestamp_) >= min_keyframe_time_delta_s_;
+
+    // Directional isolation: is there any existing keyframe inside the elongated ellipse
+    // centered at the current position, with major axis along the viewing direction?
+    cv::Mat P_curr = world_pose(cv::Rect(3, 0, 1, 3));
+    cv::Vec3d fwd(R_curr.at<double>(0, 0), R_curr.at<double>(1, 0), R_curr.at<double>(2, 0));
+    double n = cv::norm(fwd);
+    if (n < 1e-9) {
+        fwd = cv::Vec3d(1.0, 0.0, 0.0);
+    } else {
+        fwd /= n;
+    }
+    bool spatially_isolated = !anyKeyframeInsideEllipsoid(P_curr, fwd, ellipse_major_m_, ellipse_minor_m_);
+
+    if (use_or_policy_) {
+        // Create a keyframe when either the heading changed significantly OR the current
+        // position is spatially isolated from all existing keyframes; time floor always applies.
+        return time_ok && (orient_deg >= azimuth_threshold_deg_ || spatially_isolated);
+    } else {
+        // Strict AND: significant turn, spatial isolation and time gap must hold together.
+        return time_ok && (orient_deg >= azimuth_threshold_deg_) && spatially_isolated;
+    }
+}
+
+double LoopClosure::azimuthDeg(const cv::Mat& R) const {
+    // Camera forward axis (+X in camera frame) mapped to the world frame and projected onto
+    // the horizontal plane gives the heading (azimuth / yaw).
+    double wx = R.at<double>(0, 0);
+    double wy = R.at<double>(1, 0);
+    return std::atan2(wy, wx) * 180.0 / M_PI;
+}
+
+bool LoopClosure::anyKeyframeInsideEllipsoid(const cv::Mat& P_curr, const cv::Vec3d& d_hat, float a_meters, float b_meters) const {
+    double cx = P_curr.at<double>(0, 0);
+    double cy = P_curr.at<double>(1, 0);
+    double cz = P_curr.at<double>(2, 0);
+
+    for (const auto& kf : keyframes_) {
+        if (!kf.is_keyframe || kf.full_pose.empty() || kf.full_pose.rows != 4) {
+            continue;
+        }
+        double kx = kf.full_pose.at<double>(0, 3);
+        double ky = kf.full_pose.at<double>(1, 3);
+        double kz = kf.full_pose.at<double>(2, 3);
+
+        double vx = kx - cx;
+        double vy = ky - cy;
+        double vz = kz - cz;
+
+        double s_par = vx * d_hat[0] + vy * d_hat[1] + vz * d_hat[2];
+        cv::Vec3d proj(s_par * d_hat[0], s_par * d_hat[1], s_par * d_hat[2]);
+        cv::Vec3d perp(vx - proj[0], vy - proj[1], vz - proj[2]);
+        double perp_norm = std::sqrt(perp[0] * perp[0] + perp[1] * perp[1] + perp[2] * perp[2]);
+
+        double term_par = s_par / a_meters;
+        double term_perp = perp_norm / b_meters;
+        if (term_par * term_par + term_perp * term_perp <= 1.0) {
+            return true;
+        }
     }
     return false;
 }
@@ -292,31 +364,18 @@ bool LoopClosure::addFrame(int frame_id, const cv::Mat& image_left, const cv::Ma
         }
     }
     
-    bool is_kf = force_keyframe || isKeyframe(points3D, min_keypoints_, world_pose, has_last_kf ? last_kf.full_pose : cv::Mat(), keyframe_distance_meters_);
-    
-    if (is_kf && !force_keyframe && min_keyframe_distance_meters_ > 0 && !world_pose.empty() && world_pose.rows == 4 && world_pose.cols == 4) {
-        double min_dist = std::numeric_limits<double>::max();
-        for (const auto& kf : keyframes_) {
-            if (kf.is_keyframe && !kf.full_pose.empty() && kf.full_pose.rows == 4 && kf.full_pose.cols == 4) {
-                cv::Mat t1 = world_pose(cv::Rect(3, 0, 1, 3));
-                cv::Mat t2 = kf.full_pose(cv::Rect(3, 0, 1, 3));
-                double dist = cv::norm(t1 - t2);
-                if (dist < min_dist) {
-                    min_dist = dist;
-                }
-            }
-        }
-        if (min_dist < min_keyframe_distance_meters_) {
-            if (debug_mode_) {
-                std::cout << "[LoopClosure] Frame " << frame_id << " skipped: min distance to existing keyframe is " 
-                         << min_dist << "m < " << min_keyframe_distance_meters_ << "m" << std::endl;
-            }
-            is_kf = false;
-        }
+    // Synthetic absolute time for the current frame (monotonic in frame_id).
+    double timestamp_curr = static_cast<double>(frame_id) * synthetic_dt_s_;
+
+    bool is_kf = force_keyframe || isKeyframe(points3D, min_keypoints_, world_pose, last_kf, has_last_kf, timestamp_curr);
+
+    if (debug_mode_ && !is_kf && !force_keyframe) {
+        std::cout << "[LoopClosure] Frame " << frame_id << " not a keyframe" << std::endl;
     }
-    
+
     KeyFrame kf;
     kf.id = frame_id;
+    kf.timestamp_ = timestamp_curr;
     kf.rotation = rotation.clone();
     kf.translation = translation.clone();
     kf.keypoints = keypoints_left;
