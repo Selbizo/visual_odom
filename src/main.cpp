@@ -16,6 +16,7 @@
 #include "visualOdometry.h"
 #include "loopclosure.h"
 
+#include "InstantaneousError.h"
 #include "camera_object.h"
 #include "rgbd_standalone.h"
 
@@ -84,10 +85,19 @@ int main(int argc, char **argv)
     bool use_intel_rgbd = false;
     bool use_camera = false;
     std::vector<Matrix> pose_matrix_gt;
-    
+
     // Sequence (overridable via --filepath=<dir>)
     const char* filepath = filepath_arg != nullptr ? filepath_arg : "/mnt/data/KITTY/data_odometry_gray/dataset/sequences/00/";
     cout << "Filepath: " << filepath << endl;
+
+    // Ground-truth poses for instantaneous error evaluation (KITTI format).
+    const char* gt_root = "/mnt/data/KITTY/data_odometry_poses/dataset/poses";
+    std::string fp_seq(filepath);
+    while (!fp_seq.empty() && fp_seq.back() == '/') fp_seq.pop_back();
+    size_t slash = fp_seq.find_last_of('/');
+    std::string seq = (slash != std::string::npos) ? fp_seq.substr(slash + 1) : "00";
+    std::vector<cv::Mat> gt_poses = loadGTPoses(std::string(gt_root) + "/" + seq + ".txt");
+    cout << "Loaded " << gt_poses.size() << " ground-truth poses for sequence " << seq << endl;
 
     constexpr const char* rgbd_str = "rgbd";
     constexpr const char* camera_str = "camera";
@@ -95,8 +105,8 @@ int main(int argc, char **argv)
     if(filepath == rgbd_str) use_intel_rgbd = true;
     else if(filepath == camera_str) use_camera = true;
 
-    // Camera calibration
-    constexpr const char* strSettingPath = "calibration/kitti00.yaml";
+    // Camera calibration (absolute path so it works regardless of the current directory)
+    constexpr const char* strSettingPath = "/home/selbizo-pc/CV_projects/visual_odom/calibration/kitti00.yaml";
     cout << "Calibration Filepath: " << strSettingPath << endl;
 
     cv::FileStorage fSettings(strSettingPath, cv::FileStorage::READ);
@@ -739,6 +749,14 @@ int main(int argc, char **argv)
         t_b = clock();
         float frame_time = 1000*(double)(t_b-t_a)/CLOCKS_PER_SEC;
         float fps = 1000/frame_time;
+
+        if (!gt_poses.empty() && frame_id >= 0 && frame_id < (int)gt_poses.size()) {
+            InstantaneousError ie = computeInstantaneousError(frame_id, frame_pose, gt_poses[frame_id]);
+            std::cout << "[Err] frame " << frame_id
+                      << " | est(x,y,z)=" << ie.est_x << "," << ie.est_y << "," << ie.est_z
+                      << " | gt(x,y,z)=" << ie.gt_x << "," << ie.gt_y << "," << ie.gt_z
+                      << " | t_err=" << ie.t_err_m << " m, r_err=" << ie.r_err_deg << " deg" << std::endl;
+        }
 
         cv::Mat xyz = frame_pose.col(3).clone(); 
         //где-то здесь нужно 

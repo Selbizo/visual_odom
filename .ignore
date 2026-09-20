@@ -1,0 +1,6 @@
+build/
+Data/
+.DS_Store
+.cache
+.vscode/
+*.txt
